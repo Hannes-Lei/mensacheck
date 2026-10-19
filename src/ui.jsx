@@ -17,7 +17,7 @@ const LIGHT = {
   noteBg: "#FFF6E2", noteBorder: "#F0DFB0", noteText: "#7A5B16",
   errBg: "#FDECEA", errBorder: "#F3C4BE", errText: "#8A2E22",
   veganBg: "#E3F1E1", veganText: "#2F6B2A", veggieBg: "#FFF1D6", veggieText: "#8A5A00",
-  commentBg: "#F7F4EC", track: "#EEE9DD",
+  commentBg: "#F7F4EC", track: "#EEE9DD", winnerBg: "#FFF8E6",
   overlay: "rgba(30,28,24,.45)", navBg: "rgba(251,249,244,.96)",
   toastBg: "#2B2A26", toastText: "#FFFFFF", shadow: "rgba(0,0,0,.04)",
 };
@@ -32,7 +32,7 @@ const DARK = {
   noteBg: "#2A2416", noteBorder: "#4F4325", noteText: "#E9CD8A",
   errBg: "#2E1A17", errBorder: "#5C302A", errText: "#F2B3A8",
   veganBg: "#1F3321", veganText: "#9AD69F", veggieBg: "#33280F", veggieText: "#E8C373",
-  commentBg: "#2A2723", track: "#2E2B27",
+  commentBg: "#2A2723", track: "#2E2B27", winnerBg: "#2B2414",
   overlay: "rgba(0,0,0,.6)", navBg: "rgba(22,21,19,.94)",
   toastBg: "#EDEAE3", toastText: "#161513", shadow: "rgba(0,0,0,0)",
 };
@@ -162,6 +162,12 @@ export const styles = {
     padding: "12px 14px", background: C.noteBg, border: `1px solid ${C.noteBorder}`,
     borderRadius: 10, color: C.noteText, fontSize: 14,
   },
+  winner: {
+    display: "flex", alignItems: "center", gap: 12, width: "100%", textAlign: "left",
+    padding: "12px 14px", borderRadius: 14, border: `2px solid ${C.gold}`,
+    background: C.winnerBg, color: C.text, cursor: "pointer",
+  },
+  winnerLabel: { fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".06em", color: C.gold },
   noticeError: { background: C.errBg, border: `1px solid ${C.errBorder}`, color: C.errText },
   empty: { textAlign: "center", padding: "36px 16px", color: C.soft, fontSize: 14, lineHeight: 1.5 },
   card: { background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, padding: 16, boxShadow: `0 1px 2px ${C.shadow}` },

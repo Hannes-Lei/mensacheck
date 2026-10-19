@@ -85,7 +85,7 @@ function MealCard({
   const commentCount = stats?.comments || 0;
 
   return (
-    <article style={{ ...styles.card, ...(compact ? styles.cardCompact : {}) }}>
+    <article data-meal={m.name} style={{ ...styles.card, ...(compact ? styles.cardCompact : {}), scrollMarginTop: 200 }}>
       <div style={styles.cardTop}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={styles.metaRow}>
@@ -398,6 +398,17 @@ export default function TodayTab({
     };
   }, [currentDay, archive, ratedMeals, isFuture, dietFilter, sortByRating, stats, favorites, canteenId]);
 
+  // Tagessieger: bestbewertetes Hauptgericht (bei Gleichstand mehr Stimmen)
+  const winner = isFuture ? null : mains
+    .filter((m) => stats[m.name]?.votes > 0)
+    .sort((a, b) =>
+      stats[b.name].avg_stars - stats[a.name].avg_stars || stats[b.name].votes - stats[a.name].votes)[0];
+
+  function jumpTo(name) {
+    const el = [...document.querySelectorAll("article[data-meal]")].find((a) => a.dataset.meal === name);
+    el?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
   const cardProps = (m, compact = false) => ({
     meal: m,
     stats: stats[m.name],
@@ -463,6 +474,22 @@ export default function TodayTab({
             </strong>{" "}
             {favToday.map((m) => m.name).join(", ")}
           </div>
+        )}
+
+        {winner && !dayLoading && (
+          <button type="button" style={styles.winner} onClick={() => jumpTo(winner.name)}>
+            <span style={{ fontSize: 30, lineHeight: 1 }}>🏆</span>
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <span style={styles.winnerLabel}>{date === today ? "Heute vorn" : "An diesem Tag vorn"}</span>
+              <span style={{ display: "block", fontSize: 16, fontWeight: 800, lineHeight: 1.3, marginTop: 2 }}>{winner.name}</span>
+            </span>
+            <span style={{ textAlign: "right", flexShrink: 0 }}>
+              <span style={{ display: "block", fontSize: 20, fontWeight: 800 }}>{formatAvg(stats[winner.name].avg_stars)} <span style={{ color: C.gold }}>★</span></span>
+              <span style={{ fontSize: 12, color: C.muted }}>
+                {stats[winner.name].votes} {stats[winner.name].votes === 1 ? "Stimme" : "Stimmen"}
+              </span>
+            </span>
+          </button>
         )}
 
         {dayLoading && !error && !nothingAtAll && <div style={styles.notice}>Speiseplan wird geladen…</div>}

@@ -51,7 +51,7 @@ function CommentList({ canteenId, date, mealName, refreshKey }) {
 // ---- Karte für ein Gericht -------------------------------------------------
 function MealCard({
   meal: m, stats, mine, isFavorite, canRate, isFuture,
-  onRate, onComment, onFavorite, needLogin, canteenId, date, compact = false,
+  onRate, onComment, onRemove, onFavorite, needLogin, canteenId, date, compact = false,
 }) {
   const [showAllergens, setShowAllergens] = useState(false);
   const [showComments, setShowComments] = useState(false);
@@ -143,6 +143,14 @@ function MealCard({
           {commentCount > 0 && (
             <button type="button" style={styles.smallAction} onClick={() => setShowComments((s) => !s)}>
               💬 {commentCount} {commentCount === 1 ? "Kommentar" : "Kommentare"} {showComments ? "▴" : "▾"}
+            </button>
+          )}
+          {mine?.stars > 0 && !editing && (
+            <button
+              type="button" style={{ ...styles.smallAction, color: C.muted, marginLeft: "auto" }}
+              onClick={() => { onRemove(m); setShowComments(false); setRefreshKey((k) => k + 1); }}
+            >
+              Bewertung entfernen
             </button>
           )}
         </div>
@@ -251,6 +259,23 @@ export default function TodayTab({
     loadRatings();
   }
 
+  async function removeRating(meal) {
+    const before = mine[meal.name];
+    const hint = before?.comment ? " Dein Kommentar wird dabei auch gelöscht." : "";
+    if (!window.confirm(`Deine Bewertung für „${meal.name}" entfernen?${hint}`)) return;
+    setMine((p) => { const n = { ...p }; delete n[meal.name]; return n; });
+    const { error: err } = await supabase.from("ratings").delete()
+      .eq("user_id", userId).eq("canteen_id", canteenId)
+      .eq("meal_date", date).eq("meal_name", meal.name);
+    if (err) {
+      showToast(friendlyError(err));
+      setMine((p) => ({ ...p, [meal.name]: before }));
+    } else {
+      showToast("Bewertung entfernt.");
+    }
+    loadRatings();
+  }
+
   async function comment(meal, text) {
     const current = mine[meal.name];
     if (!current?.stars) { showToast("Bitte zuerst Sterne vergeben."); return false; }
@@ -290,6 +315,7 @@ export default function TodayTab({
     isFuture,
     onRate: rate,
     onComment: comment,
+    onRemove: removeRating,
     onFavorite: (meal) => onToggleFavorite(canteenId, meal.name),
     needLogin,
     canteenId,

@@ -38,6 +38,15 @@ export default function ProfileTab({
 
   const canteenName = (id) => canteens.find((c) => c.id === id)?.name || `Mensa ${id}`;
 
+  async function removeRating(r) {
+    const hint = r.comment ? " Dein Kommentar wird dabei auch gelöscht." : "";
+    if (!window.confirm(`Deine Bewertung für „${r.meal_name}" vom ${formatDate(r.meal_date)} entfernen?${hint}`)) return;
+    const previous = ratings;
+    setRatings((list) => list.filter((x) => x.id !== r.id));
+    const { error } = await supabase.from("ratings").delete().eq("id", r.id).eq("user_id", userId);
+    if (error) setRatings(previous);
+  }
+
   if (!userId) {
     return (
       <main style={styles.main}>
@@ -139,7 +148,16 @@ export default function ProfileTab({
             <div style={styles.rankMeta}>{canteenName(r.canteen_id)} · {formatDate(r.meal_date)}</div>
             {r.comment && <div style={{ fontSize: 13, color: C.soft, marginTop: 6, lineHeight: 1.4 }}>„{r.comment}"</div>}
           </div>
-          <StarLine value={r.stars} size={14} />
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+            <StarLine value={r.stars} size={14} />
+            <button
+              type="button" onClick={() => removeRating(r)}
+              style={{ ...styles.smallAction, color: C.muted, fontSize: 12 }}
+              aria-label={`Bewertung für ${r.meal_name} entfernen`}
+            >
+              Entfernen
+            </button>
+          </div>
         </div>
       ))}
       {ratings && ratings.length > 15 && !showAll && (

@@ -51,7 +51,7 @@ function CommentList({ canteenId, date, mealName, refreshKey }) {
 // ---- Karte für ein Gericht -------------------------------------------------
 function MealCard({
   meal: m, stats, mine, isFavorite, canRate, isFuture,
-  onRate, onComment, onRemove, onFavorite, needLogin, canteenId, date, compact = false,
+  onRate, onComment, onRemove, onFavorite, onShare, needLogin, canteenId, date, compact = false,
 }) {
   const [showAllergens, setShowAllergens] = useState(false);
   const [showComments, setShowComments] = useState(false);
@@ -133,19 +133,23 @@ function MealCard({
         </div>
       </div>
 
-      {!isFuture && (
-        <div style={styles.commentBar}>
-          {mine?.stars > 0 && !editing && (
+      <div style={styles.commentBar}>
+        {!isFuture && mine?.stars > 0 && !editing && (
             <button type="button" style={styles.smallAction} onClick={startComment}>
               {mine.comment ? "✎ Kommentar bearbeiten" : "+ Kommentar schreiben"}
             </button>
           )}
-          {commentCount > 0 && (
+        {!isFuture && commentCount > 0 && (
             <button type="button" style={styles.smallAction} onClick={() => setShowComments((s) => !s)}>
               💬 {commentCount} {commentCount === 1 ? "Kommentar" : "Kommentare"} {showComments ? "▴" : "▾"}
             </button>
           )}
-          {mine?.stars > 0 && !editing && (
+        {!editing && (
+          <button type="button" style={styles.smallAction} onClick={() => onShare(m)}>
+            ↗ Teilen
+          </button>
+        )}
+        {!isFuture && mine?.stars > 0 && !editing && (
             <button
               type="button" style={{ ...styles.smallAction, color: C.muted, marginLeft: "auto" }}
               onClick={() => { onRemove(m); setShowComments(false); setRefreshKey((k) => k + 1); }}
@@ -153,8 +157,7 @@ function MealCard({
               Bewertung entfernen
             </button>
           )}
-        </div>
-      )}
+      </div>
 
       {editing && (
         <div style={{ marginTop: 10 }}>
@@ -225,6 +228,7 @@ function matchesDiet(m, dietFilter) {
 // ---- Die Ansicht -----------------------------------------------------------
 export default function TodayTab({
   canteens, canteenId, onCanteenChange, userId, favorites, onToggleFavorite, needLogin, showToast,
+  onActivity = () => {},
 }) {
   const today = todayBerlin();
 
@@ -327,6 +331,7 @@ export default function TodayTab({
     setMine((p) => ({ ...p, [meal.name]: { ...before, meal_name: meal.name, stars } }));
     const ok = await saveRating(meal, stars, before?.comment);
     if (!ok) setMine((p) => ({ ...p, [meal.name]: before }));
+    else if (!before?.stars) onActivity(); // neue Bewertung -> vielleicht neues Abzeichen
     loadRatings();
   }
 
@@ -351,8 +356,31 @@ export default function TodayTab({
     const current = mine[meal.name];
     if (!current?.stars) { showToast("Bitte zuerst Sterne vergeben."); return false; }
     const ok = await saveRating(meal, current.stars, text);
-    if (ok) await loadRatings();
+    if (ok) { await loadRatings(); if (text && !current.comment) onActivity(); }
     return ok;
+  }
+
+  // Gericht teilen: Teilen-Menü des Handys, sonst Text kopieren
+  async function share(meal) {
+    const s = stats[meal.name];
+    const mensa = canteens.find((c) => c.id === canteenId)?.name || "Mensa";
+    const when = date === today ? "Heute" : `Am ${dayLabel(date, today).replace(" · ", ", ")}`;
+    const rating = s?.votes > 0
+      ? ` ⭐ ${formatAvg(s.avg_stars)} (${s.votes} ${s.votes === 1 ? "Stimme" : "Stimmen"})`
+      : meal.price != null ? ` für ${formatPrice(meal.price)}` : "";
+    const text = `${when} in der ${mensa}: ${meal.name}${rating}. Kommt wer mit? 🍽️`;
+    const url = window.location.origin;
+
+    if (navigator.share) {
+      try { await navigator.share({ title: "MensaCheck", text, url }); } catch { /* abgebrochen */ }
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(`${text}\n${url}`);
+      showToast("Text kopiert – jetzt z.B. in WhatsApp einfügen.");
+    } catch {
+      showToast("Teilen ist auf diesem Gerät leider nicht möglich.");
+    }
   }
 
   // 4) Was wird angezeigt?
@@ -419,6 +447,7 @@ export default function TodayTab({
     onRate: rate,
     onComment: comment,
     onRemove: removeRating,
+    onShare: share,
     onFavorite: (meal) => onToggleFavorite(canteenId, meal.name),
     needLogin,
     canteenId,

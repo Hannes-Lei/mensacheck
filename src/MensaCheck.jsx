@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "./supabase.js";
-import { dishKey, friendlyError } from "./helpers.js";
+import { dishKey, friendlyError, BADGES, computeStats } from "./helpers.js";
 import { styles, globalCss } from "./ui.jsx";
 import AuthSheet from "./AuthSheet.jsx";
 import TodayTab from "./TodayTab.jsx";
 import RankingTab from "./RankingTab.jsx";
 import ProfileTab from "./ProfileTab.jsx";
+import Celebration from "./Celebration.jsx";
 
 // ============================================================================
 // MensaCheck Leipzig – Version 5: Ranglisten, Favoriten, Abzeichen, Dunkelmodus
@@ -46,6 +47,7 @@ export default function MensaCheck() {
   const [favoritesList, setFavoritesList] = useState([]);
   const [toast, setToast] = useState(null);
   const [theme, setTheme] = useState(loadTheme); // light | dark
+  const [celebrate, setCelebrate] = useState([]); // neu freigeschaltete Abzeichen
 
   const userId = session?.user?.id || null;
 
@@ -75,6 +77,36 @@ export default function MensaCheck() {
       .eq("user_id", userId).order("created_at", { ascending: false })
       .then(({ data }) => setFavoritesList(data || []));
   }, [userId]);
+
+  // ---- Abzeichen: neue erkennen und feiern -------------------------------
+  // Welche Abzeichen schon gefeiert wurden, merkt sich das Gerät.
+  const checkBadges = useCallback(async (silent = false) => {
+    if (!userId) return;
+    const { data } = await supabase.from("ratings")
+      .select("canteen_id, meal_date, comment").eq("user_id", userId).limit(5000);
+    const stats = computeStats(data || []);
+    const earned = BADGES.filter((b) => stats[b.metric] >= b.goal).map((b) => b.id);
+
+    const key = `mensacheck-abzeichen-${userId}`;
+    let known = null;
+    try { known = JSON.parse(localStorage.getItem(key)); } catch { /* egal */ }
+    try { localStorage.setItem(key, JSON.stringify(earned)); } catch { /* egal */ }
+
+    if (silent || !Array.isArray(known)) return; // beim Start nur merken, nicht feiern
+    const fresh = BADGES.filter((b) => earned.includes(b.id) && !known.includes(b.id));
+    if (fresh.length) setCelebrate((q) => [...q, ...fresh]);
+  }, [userId]);
+
+  // Beim Anmelden den aktuellen Stand merken. Ganz neue Konten haben noch
+  // keine Abzeichen – so wird schon das erste ("Erster Bissen") gefeiert.
+  useEffect(() => {
+    if (!userId) return;
+    let stored = null;
+    try { stored = localStorage.getItem(`mensacheck-abzeichen-${userId}`); } catch { /* egal */ }
+    if (stored === null) checkBadges(true);
+  }, [userId, checkBadges]);
+
+  const finishCelebration = useCallback(() => setCelebrate((q) => q.slice(1)), []);
 
   // Liste der Mensen
   useEffect(() => {
@@ -154,6 +186,7 @@ export default function MensaCheck() {
           onToggleFavorite={toggleFavorite}
           needLogin={() => setShowAuth(true)}
           showToast={showToast}
+          onActivity={() => checkBadges(false)}
         />
       </div>
       <div style={{ display: tab === "ranking" ? "block" : "none" }}>
@@ -197,6 +230,7 @@ export default function MensaCheck() {
 
       {toast && <div style={styles.toast} role="status">{toast}</div>}
       {showAuth && <AuthSheet onClose={() => setShowAuth(false)} />}
+      {celebrate.length > 0 && <Celebration key={celebrate[0].id} badge={celebrate[0]} onDone={finishCelebration} />}
     </div>
   );
 }

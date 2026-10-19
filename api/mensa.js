@@ -42,6 +42,26 @@ const DIET = ["Vegan", "Vegetarisch"];
 // Kategorien, die keine Hauptgerichte sind (werden in der App einklappbar).
 const EXTRA_CATEGORY = /beilage|smoothie|dessert|salat|getränk|obst/i;
 
+// Bei diesen Theken trägt das Studentenwerk dieselben Angaben an ALLE
+// Soßen/Sorten der Theke ein – z.B. "Vegan" und "Schwein" gleichzeitig.
+// Dort verlassen wir uns lieber auf den Namen des Gerichts.
+const SHARED_NOTES_CATEGORY = /pasta|pizza/i;
+
+// Wörter im Gerichtnamen, die auf Fleisch oder Fisch hinweisen …
+const MEAT_IN_NAME = new RegExp(
+  [
+    "fleisch", "hack", "schwein", "rind", "kalb", "lamm", "wild", "geflügel",
+    "hähnchen", "huhn", "chicken", "pute", "ente", "schinken", "speck", "bacon",
+    "salami", "wurst", "würst", "chorizo", "kassler", "leberkäse", "frikadelle",
+    "bulette", "cevapcici", "döner", "bolognese", "fisch", "lachs", "scholle",
+    "kabeljau", "forelle", "hering", "matjes", "garnele", "shrimp", "calamari",
+    "muschel", "thunfisch",
+  ].join("|"),
+  "i"
+);
+// … außer es ist ein Ersatzprodukt ("Bolognese aus Tofu", "Like Chicken")
+const MEAT_SUBSTITUTE = /tofu|soja|seitan|vegetar|veggie|planted|pflanz|fleischlos|like /i;
+
 const lower = (list) => list.map((x) => x.toLowerCase());
 const ALLERGENS_L = lower(ALLERGENS);
 const ADDITIVES_L = lower(ADDITIVES);
@@ -72,19 +92,28 @@ function cleanMeal(meal) {
     }
   }
 
-  // Ernährungsform: Kategorie ist am verlässlichsten. Die Notizen sind bei
-  // manchen Theken (z.B. Pastateller) für die ganze Theke gesetzt und
-  // widersprechen sich – dann zeigen wir lieber gar kein Label.
+  const name = (meal.name || "").replace(/\s+/g, " ").trim();
   const cat = (meal.category || "").toLowerCase();
+  const meatInName = MEAT_IN_NAME.test(name) && !MEAT_SUBSTITUTE.test(name);
+
+  // Ernährungsform – im Zweifel lieber gar kein Label als ein falsches:
+  // 1. Steht "vegan" im Namen, ist es vegan.
+  // 2. Klingt der Name nach Fleisch/Fisch, gibt es kein Label.
+  // 3. Pasta/Pizza: Angaben gelten für die ganze Theke. Höchstens
+  //    "vegetarisch", und nur wenn an der Theke kein Fleisch angegeben ist.
+  // 4. Sonst: Kategorie ("Veganes Gericht") oder die Angaben zum Gericht.
   let diet = null;
-  if (cat.includes("vegan")) diet = "vegan";
+  if (/vegan/i.test(name)) diet = "vegan";
+  else if (meatInName) diet = null;
+  else if (SHARED_NOTES_CATEGORY.test(cat)) diet = !hasMeat && (saysVegan || saysVegetarian) ? "vegetarisch" : null;
+  else if (cat.includes("vegan")) diet = "vegan";
   else if (cat.includes("vegetar")) diet = "vegetarisch";
   else if (!hasMeat && saysVegan) diet = "vegan";
   else if (!hasMeat && saysVegetarian) diet = "vegetarisch";
 
   return {
     id: meal.id,
-    name: (meal.name || "").replace(/\s+/g, " ").trim(),
+    name,
     category: meal.category || "",
     price: meal.prices?.students ?? null,
     sides,

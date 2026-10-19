@@ -85,3 +85,13 @@ export function computeStats(ratings) {
     days: new Set(ratings.map((r) => r.meal_date)).size,
   };
 }
+
+// Am Pastateller nur Soßen zeigen, nicht Nudelsorte oder Käse
+// (gleiche Regel wie in api/mensa.js)
+const PASTA_EXTRA =
+  /^(vollkorn-?)?(spirelli|spaghetti|penne|fusilli|farfalle|tagliatelle|makkaroni|maccheroni|rigatoni|tortiglioni|linguine|conchiglie|nudeln|bandnudeln|hörnchen\w*|gnocchi)\b|gouda|parmesan|hartkäse|reibekäse|bergkäse|emmentaler|pizzaschmelz/i;
+const SAUCE_HINT = /soße|sosse|sauce|sugo|pesto|bolognese|carbonara|gulasch|ragout|ragù|würzfleisch|\smit\s/i;
+
+export function isPastaExtra(category, name) {
+  return /pasta/i.test(category || "") && PASTA_EXTRA.test(name || "") && !SAUCE_HINT.test(name || "");
+}

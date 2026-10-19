@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "./supabase.js";
 import {
-  todayBerlin, formatPrice, formatAvg, dayLabel, timeAgo, friendlyError, dishKey,
+  todayBerlin, formatPrice, formatAvg, dayLabel, timeAgo, friendlyError, dishKey, isPastaExtra,
 } from "./helpers.js";
 import { Stars, Chip, DietBadge, formatStars, styles, C } from "./ui.jsx";
 import { CommentItem, THREAD_SELECT } from "./Interactions.jsx";
@@ -422,7 +422,7 @@ export default function TodayTab({
         if (i >= 0) list.splice(i + 1, 0, m);
         else list.push(m);
       };
-      (archive || []).forEach((r) => add(archivedMeal(r)));
+      (archive || []).filter((r) => !isPastaExtra(r.category, r.meal_name)).forEach((r) => add(archivedMeal(r)));
       Object.values(ratedMeals).forEach((r) =>
         add(archivedMeal({ meal_name: r.meal_name, category: r.category, price: r.price })));
       all = list;

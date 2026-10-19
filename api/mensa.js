@@ -62,6 +62,17 @@ const MEAT_IN_NAME = new RegExp(
 // … außer es ist ein Ersatzprodukt ("Bolognese aus Tofu", "Like Chicken")
 const MEAT_SUBSTITUTE = /tofu|soja|seitan|vegetar|veggie|planted|pflanz|fleischlos|like /i;
 
+// Am Pastateller listet das Studentenwerk auch Nudelsorte und Käse als
+// eigene "Gerichte" (Spirelli, Geriebener Gouda, Pizzaschmelz). Die gibt es
+// zu jeder Soße dazu – wir zeigen nur die Soßen.
+const PASTA_EXTRA =
+  /^(vollkorn-?)?(spirelli|spaghetti|penne|fusilli|farfalle|tagliatelle|makkaroni|maccheroni|rigatoni|tortiglioni|linguine|conchiglie|nudeln|bandnudeln|hörnchen\w*|gnocchi)\b|gouda|parmesan|hartkäse|reibekäse|bergkäse|emmentaler|pizzaschmelz/i;
+const SAUCE_HINT = /soße|sosse|sauce|sugo|pesto|bolognese|carbonara|gulasch|ragout|ragù|würzfleisch|\smit\s/i;
+
+function isPastaExtra(category, name) {
+  return /pasta/i.test(category || "") && PASTA_EXTRA.test(name) && !SAUCE_HINT.test(name);
+}
+
 const lower = (list) => list.map((x) => x.toLowerCase());
 const ALLERGENS_L = lower(ALLERGENS);
 const ADDITIVES_L = lower(ADDITIVES);
@@ -129,6 +140,7 @@ function cleanDays(days) {
     const meals = [];
     for (const m of day.meals || []) {
       const meal = cleanMeal(m);
+      if (isPastaExtra(meal.category, meal.name)) continue; // nur Soßen zeigen
       const key = `${meal.category}|${meal.name}`;
       if (seen.has(key)) continue; // doppelte Einträge entfernen
       seen.add(key);

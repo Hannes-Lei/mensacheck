@@ -176,13 +176,59 @@ function MealCard({
   );
 }
 
+
+// Ein Eintrag aus dem Archiv (Tabelle menu_items) als Gericht für die Anzeige
+function archivedMeal(r) {
+  return {
+    id: `archiv-${r.meal_name}`,
+    name: r.meal_name,
+    category: r.category || "",
+    price: r.price,
+    sides: r.sides || [],
+    allergens: r.allergens || [],
+    diet: r.diet || null,
+    isMain: r.is_main ?? true,
+  };
+}
+
+// Die heutigen Gerichte in Supabase merken (Tabelle menu_items). Schon
+// gemerkte Gerichte werden übersprungen, Fehler stören die Anzeige nicht.
+function rememberToday(canteenId, day) {
+  if (!day) return;
+  const rows = new Map();
+  for (const m of day.meals) {
+    if (rows.has(m.name)) continue;
+    rows.set(m.name, {
+      canteen_id: canteenId,
+      meal_date: day.date,
+      meal_name: m.name,
+      category: m.category,
+      price: m.price,
+      sides: m.sides,
+      allergens: m.allergens,
+      diet: m.diet,
+      is_main: m.isMain,
+    });
+  }
+  supabase
+    .from("menu_items")
+    .upsert([...rows.values()], { onConflict: "canteen_id,meal_date,meal_name", ignoreDuplicates: true })
+    .then(({ error }) => error && console.warn("Gerichte merken:", error.message));
+}
+
+function matchesDiet(m, dietFilter) {
+  if (dietFilter === "vegan") return m.diet === "vegan";
+  if (dietFilter === "vegetarisch") return m.diet === "vegan" || m.diet === "vegetarisch";
+  return true;
+}
+
 // ---- Die Ansicht -----------------------------------------------------------
 export default function TodayTab({
   canteens, canteenId, onCanteenChange, userId, favorites, onToggleFavorite, needLogin, showToast,
 }) {
   const today = todayBerlin();
 
-  const [days, setDays] = useState([]);
+  const [days, setDays] = useState([]);           // kommende Tage laut OpenMensa
   const [date, setDate] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -193,8 +239,10 @@ export default function TodayTab({
 
   const [stats, setStats] = useState({});
   const [mine, setMine] = useState({});
+  const [archive, setArchive] = useState(null);    // gemerkte Gerichte des Tages
+  const [ratedMeals, setRatedMeals] = useState({}); // bewertete Gerichte des Tages
 
-  // Speiseplan laden
+  // 1) Aktueller Speiseplan laden – und die heutigen Gerichte merken
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -210,13 +258,14 @@ export default function TodayTab({
         const upcoming = (data.days || []).filter((d) => d.date >= today && !d.closed && d.meals.length > 0);
         setDays(upcoming);
         setDate(upcoming.some((d) => d.date === today) ? today : upcoming[0]?.date || null);
+        rememberToday(canteenId, upcoming.find((d) => d.date === today));
       })
       .catch((e) => !cancelled && setError(e.message))
       .finally(() => !cancelled && setLoading(false));
     return () => { cancelled = true; };
   }, [canteenId, today]);
 
-  // Bewertungen für Mensa + Tag laden
+  // 2) Bewertungen + gemerkte Gerichte für Mensa und Tag laden
   const loadRatings = useCallback(async () => {
     if (!date) return;
     const statsReq = supabase
@@ -228,17 +277,39 @@ export default function TodayTab({
       ? supabase.from("ratings").select("meal_name, stars, comment")
           .eq("user_id", userId).eq("canteen_id", canteenId).eq("meal_date", date)
       : Promise.resolve({ data: [] });
-    const [{ data: s }, { data: m }] = await Promise.all([statsReq, mineReq]);
+    const ratedReq = supabase
+      .from("ratings")
+      .select("meal_name, category, price")
+      .eq("canteen_id", canteenId)
+      .eq("meal_date", date)
+      .limit(1000);
+    const archiveReq = supabase
+      .from("menu_items")
+      .select("meal_name, category, price, sides, allergens, diet, is_main")
+      .eq("canteen_id", canteenId)
+      .eq("meal_date", date)
+      .order("first_seen", { ascending: true });
+
+    const [{ data: s }, { data: m }, { data: rated }, { data: arch }] =
+      await Promise.all([statsReq, mineReq, ratedReq, archiveReq]);
+
     setStats(Object.fromEntries((s || []).map((r) => [r.meal_name, r])));
     setMine(Object.fromEntries((m || []).map((r) => [r.meal_name, r])));
+    const known = {};
+    for (const r of rated || []) known[r.meal_name] ??= r;
+    setRatedMeals(known);
+    setArchive(arch || []);
   }, [canteenId, date, userId]);
 
+  // Beim Wechsel von Mensa oder Tag alte Daten nicht kurz falsch anzeigen
+  useEffect(() => { setStats({}); setMine({}); setRatedMeals({}); setArchive(null); }, [canteenId, date]);
   useEffect(() => { loadRatings(); }, [loadRatings]);
   useEffect(() => {
     const t = setInterval(loadRatings, 60000);
     return () => clearInterval(t);
   }, [loadRatings]);
 
+  // 3) Bewerten, Kommentieren, Entfernen
   async function saveRating(meal, stars, comment) {
     const { error: err } = await supabase.from("ratings").upsert(
       {
@@ -284,27 +355,48 @@ export default function TodayTab({
     return ok;
   }
 
+  // 4) Was wird angezeigt?
   const currentDay = days.find((d) => d.date === date);
   const isFuture = date > today;
+  const dayLoading = loading;
 
   const { mains, extras, favToday } = useMemo(() => {
-    const all = currentDay?.meals || [];
-    const meals = all.filter((m) => {
-      if (dietFilter === "vegan") return m.diet === "vegan";
-      if (dietFilter === "vegetarisch") return m.diet === "vegan" || m.diet === "vegetarisch";
-      return true;
-    });
+    const plan = currentDay?.meals || [];
+
+    // Heute zeigen wir alle Gerichte, die an dem Tag irgendwann auf dem
+    // Plan standen. Für Tage in der Zukunft gilt nur der aktuelle Plan.
+    let all = plan;
+    if (!isFuture) {
+      const list = [...plan];
+      const seen = new Set(plan.map((m) => m.name));
+      // Nicht mehr gelistete Gerichte hinter ihre Kategorie einsortieren
+      const add = (m) => {
+        if (seen.has(m.name)) return;
+        seen.add(m.name);
+        let i = -1;
+        list.forEach((x, idx) => { if (x.category === m.category) i = idx; });
+        if (i >= 0) list.splice(i + 1, 0, m);
+        else list.push(m);
+      };
+      (archive || []).forEach((r) => add(archivedMeal(r)));
+      Object.values(ratedMeals).forEach((r) =>
+        add(archivedMeal({ meal_name: r.meal_name, category: r.category, price: r.price })));
+      all = list;
+    }
+
+    const filtered = all.filter((m) => matchesDiet(m, dietFilter));
     const sorted = sortByRating
-      ? [...meals].sort((a, b) =>
+      ? [...filtered].sort((a, b) =>
           (stats[b.name]?.avg_stars || 0) - (stats[a.name]?.avg_stars || 0) ||
           (stats[b.name]?.votes || 0) - (stats[a.name]?.votes || 0))
-      : meals;
+      : filtered;
+
     return {
       mains: sorted.filter((m) => m.isMain),
       extras: sorted.filter((m) => !m.isMain),
       favToday: all.filter((m) => favorites.has(dishKey(canteenId, m.name))),
     };
-  }, [currentDay, dietFilter, sortByRating, stats, favorites, canteenId]);
+  }, [currentDay, archive, ratedMeals, isFuture, dietFilter, sortByRating, stats, favorites, canteenId]);
 
   const cardProps = (m, compact = false) => ({
     meal: m,
@@ -322,6 +414,8 @@ export default function TodayTab({
     date,
     compact,
   });
+
+  const nothingAtAll = !loading && !error && days.length === 0;
 
   return (
     <>
@@ -356,36 +450,40 @@ export default function TodayTab({
       </div>
 
       <main style={styles.main}>
-        {!userId && !loading && !error && days.length > 0 && (
+        {!userId && !loading && !error && date && (
           <button type="button" style={styles.hint} onClick={needLogin}>
             <strong>Mitbewerten?</strong> Melde dich an, dann sehen alle deine Sterne und Kommentare.
           </button>
         )}
 
-        {favToday.length > 0 && !loading && (
+        {favToday.length > 0 && !dayLoading && (
           <div style={styles.favBanner}>
-            ❤️ <strong>{date === today ? "Heute" : "An diesem Tag"} gibt's dein Lieblingsgericht:</strong>{" "}
+            ❤️ <strong>
+              {date === today ? "Heute gibt's" : "An diesem Tag gibt's"} dein Lieblingsgericht:
+            </strong>{" "}
             {favToday.map((m) => m.name).join(", ")}
           </div>
         )}
 
-        {loading && <div style={styles.notice}>Speiseplan wird geladen…</div>}
-        {!loading && error && <div style={{ ...styles.notice, ...styles.noticeError }}>{error} Versuch es gleich noch einmal.</div>}
+        {dayLoading && !error && !nothingAtAll && <div style={styles.notice}>Speiseplan wird geladen…</div>}
+        {error && <div style={{ ...styles.notice, ...styles.noticeError }}>{error} Versuch es gleich noch einmal.</div>}
 
-        {!loading && !error && days.length === 0 && (
+        {nothingAtAll && (
           <div style={styles.empty}>
             <p style={{ fontSize: 18, margin: "0 0 4px", color: C.text }}>Kein Speiseplan verfügbar</p>
             <p style={{ margin: 0 }}>Diese Mensa hat in den nächsten Tagen nichts eingetragen.</p>
           </div>
         )}
 
-        {!loading && !error && currentDay && mains.length === 0 && extras.length === 0 && (
-          <div style={styles.empty}>Für diesen Filter gibt es heute nichts.</div>
+        {!dayLoading && !error && date && mains.length === 0 && extras.length === 0 && (
+          <div style={styles.empty}>
+            Für diesen Filter gibt es hier nichts.
+          </div>
         )}
 
-        {!loading && !error && mains.map((m) => <MealCard key={m.id} {...cardProps(m)} />)}
+        {!dayLoading && !error && mains.map((m) => <MealCard key={m.id} {...cardProps(m)} />)}
 
-        {!loading && !error && extras.length > 0 && (
+        {!dayLoading && !error && extras.length > 0 && (
           <>
             <button type="button" onClick={() => setShowExtras((s) => !s)} style={styles.extrasToggle}>
               {showExtras ? "▾" : "▸"} Beilagen, Desserts & Smoothies ({extras.length})

@@ -8,7 +8,7 @@ import RankingTab from "./RankingTab.jsx";
 import ProfileTab from "./ProfileTab.jsx";
 
 // ============================================================================
-// MensaCheck Leipzig – Version 4: Ranglisten, Lieblingsgerichte, Abzeichen
+// MensaCheck Leipzig – Version 5: Ranglisten, Favoriten, Abzeichen, Dunkelmodus
 // ----------------------------------------------------------------------------
 // Diese Datei ist der "Rahmen" der App: Kopfzeile, Navigation unten,
 // Anmeldung und alles, was mehrere Ansichten gemeinsam brauchen.
@@ -16,6 +16,11 @@ import ProfileTab from "./ProfileTab.jsx";
 // ============================================================================
 
 const STORAGE_KEY = "mensacheck-mensa";
+const THEME_KEY = "mensacheck-design";
+
+function loadTheme() {
+  try { return localStorage.getItem(THEME_KEY) === "dark" ? "dark" : "light"; } catch { return "light"; }
+}
 
 function loadSavedCanteen() {
   try { return Number(localStorage.getItem(STORAGE_KEY)) || null; } catch { return null; }
@@ -40,8 +45,15 @@ export default function MensaCheck() {
   const [showAuth, setShowAuth] = useState(false);
   const [favoritesList, setFavoritesList] = useState([]);
   const [toast, setToast] = useState(null);
+  const [theme, setTheme] = useState(loadTheme); // light | dark
 
   const userId = session?.user?.id || null;
+
+  // Design anwenden und merken
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    try { localStorage.setItem(THEME_KEY, theme); } catch { /* egal */ }
+  }, [theme]);
 
   // Anmeldestatus beobachten
   useEffect(() => {
@@ -156,6 +168,8 @@ export default function MensaCheck() {
           onToggleFavorite={toggleFavorite}
           needLogin={() => setShowAuth(true)}
           onSignOut={() => { supabase.auth.signOut(); setTab("today"); }}
+          theme={theme}
+          onThemeChange={setTheme}
           active={tab === "me"}
         />
       </div>

@@ -4,19 +4,43 @@ import React, { useState } from "react";
 // Gemeinsame Bausteine und das Aussehen (Farben, Abstände) der ganzen App
 // ============================================================================
 
-export const C = {
-  bg: "#FBF9F4",
-  card: "#fff",
-  text: "#2B2A26",
-  soft: "#6B675D",
-  muted: "#8A8579",
-  faint: "#A8A294",
-  line: "#ECE7DC",
-  border: "#D9D4C9",
-  green: "#3C6E47",
-  gold: "#E8A317",
-  starOff: "#D9D4C9",
+// Farben für helles und dunkles Design. In der App nutzen wir nur die
+// Namen (C.text, C.card …); welches Design gilt, entscheidet globalCss.
+const LIGHT = {
+  bg: "#FBF9F4", card: "#FFFFFF", cardAlt: "#FDFCF9", input: "#FFFFFF",
+  text: "#2B2A26", soft: "#6B675D", muted: "#8A8579", faint: "#A8A294", chipText: "#4A473F",
+  line: "#ECE7DC", lineSoft: "#F1EDE3", border: "#D9D4C9",
+  green: "#3C6E47", greenBg: "#3C6E47", onGreen: "#FFFFFF",
+  gold: "#E8A317", starOff: "#D9D4C9",
+  hintBg: "#F1F7EF", hintText: "#2F5B37",
+  favBg: "#FFF0F0", favBorder: "#F5C9C9", favText: "#8A2E3A",
+  noteBg: "#FFF6E2", noteBorder: "#F0DFB0", noteText: "#7A5B16",
+  errBg: "#FDECEA", errBorder: "#F3C4BE", errText: "#8A2E22",
+  veganBg: "#E3F1E1", veganText: "#2F6B2A", veggieBg: "#FFF1D6", veggieText: "#8A5A00",
+  commentBg: "#F7F4EC", track: "#EEE9DD",
+  overlay: "rgba(30,28,24,.45)", navBg: "rgba(251,249,244,.96)",
+  toastBg: "#2B2A26", toastText: "#FFFFFF", shadow: "rgba(0,0,0,.04)",
 };
+const DARK = {
+  bg: "#161513", card: "#211F1C", cardAlt: "#1C1A18", input: "#1C1A18",
+  text: "#EDEAE3", soft: "#C2BDB2", muted: "#9C968A", faint: "#7D776B", chipText: "#D6D1C7",
+  line: "#2E2B27", lineSoft: "#2A2723", border: "#3D3934",
+  green: "#86C994", greenBg: "#3F7E4E", onGreen: "#FFFFFF",
+  gold: "#F0B13A", starOff: "#45413B",
+  hintBg: "#1B2A1F", hintText: "#A9D8B3",
+  favBg: "#2C1B1E", favBorder: "#5A2F36", favText: "#F2B8C0",
+  noteBg: "#2A2416", noteBorder: "#4F4325", noteText: "#E9CD8A",
+  errBg: "#2E1A17", errBorder: "#5C302A", errText: "#F2B3A8",
+  veganBg: "#1F3321", veganText: "#9AD69F", veggieBg: "#33280F", veggieText: "#E8C373",
+  commentBg: "#2A2723", track: "#2E2B27",
+  overlay: "rgba(0,0,0,.6)", navBg: "rgba(22,21,19,.94)",
+  toastBg: "#EDEAE3", toastText: "#161513", shadow: "rgba(0,0,0,0)",
+};
+
+const cssVars = (t) => Object.entries(t).map(([k, v]) => `--${k}: ${v};`).join(" ");
+
+// C.text wird zu "var(--text)" usw.
+export const C = Object.fromEntries(Object.keys(LIGHT).map((k) => [k, `var(--${k})`]));
 
 export function Stars({ value, onRate, size = 26, disabled = false }) {
   const [hover, setHover] = useState(0);
@@ -78,9 +102,12 @@ export function DietBadge({ diet }) {
   );
 }
 
+// Hell ist Standard. "Dunkel" setzt <html data-theme="dark">.
 export const globalCss = `
+  :root { ${cssVars(LIGHT)} color-scheme: light; }
+  :root[data-theme="dark"] { ${cssVars(DARK)} color-scheme: dark; }
   * { box-sizing: border-box; }
-  body { margin: 0; background: ${C.bg}; }
+  body { margin: 0; background: var(--bg); transition: background .2s; }
   input, textarea, select, button { font-family: inherit; }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 `;
@@ -96,17 +123,17 @@ export const styles = {
   brandRow: { display: "flex", alignItems: "baseline", gap: 10 },
   logo: { color: C.gold, fontSize: 22 },
   title: { fontSize: 28, fontWeight: 800, margin: 0, letterSpacing: "-0.02em" },
-  city: { fontSize: 13, fontWeight: 700, color: "#fff", background: C.green, padding: "3px 9px", borderRadius: 20 },
+  city: { fontSize: 13, fontWeight: 700, color: C.onGreen, background: C.greenBg, padding: "3px 9px", borderRadius: 20 },
   subtitle: { margin: "8px 0 0", color: C.muted, fontSize: 15 },
   h2: { fontSize: 22, fontWeight: 800, margin: 0, letterSpacing: "-0.01em" },
   h3: { fontSize: 13, fontWeight: 800, margin: "22px 0 10px", textTransform: "uppercase", letterSpacing: ".06em", color: C.soft },
   loginBtn: {
-    padding: "8px 14px", borderRadius: 20, border: `1px solid ${C.green}`, background: C.green,
-    color: "#fff", fontWeight: 700, fontSize: 14, cursor: "pointer",
+    padding: "8px 14px", borderRadius: 20, border: `1px solid ${C.greenBg}`, background: C.greenBg,
+    color: C.onGreen, fontWeight: 700, fontSize: 14, cursor: "pointer",
   },
   userBtn: {
-    padding: "7px 12px", borderRadius: 20, border: `1px solid ${C.border}`, background: "#fff",
-    color: "#4A473F", fontWeight: 600, fontSize: 13, cursor: "pointer",
+    padding: "7px 12px", borderRadius: 20, border: `1px solid ${C.border}`, background: C.card,
+    color: C.chipText, fontWeight: 600, fontSize: 13, cursor: "pointer",
   },
   controls: {
     position: "sticky", top: 0, zIndex: 5, background: C.bg, display: "flex",
@@ -114,37 +141,37 @@ export const styles = {
   },
   select: {
     width: "100%", padding: "11px 12px", borderRadius: 10, border: `1px solid ${C.border}`,
-    background: "#fff", fontSize: 16, color: C.text, cursor: "pointer",
+    background: C.input, fontSize: 16, color: C.text, cursor: "pointer",
   },
   chipRow: { display: "flex", gap: 6, overflowX: "auto", alignItems: "center", scrollbarWidth: "none" },
   chip: {
     flexShrink: 0, padding: "7px 12px", borderRadius: 20, border: `1px solid ${C.border}`,
-    background: "#fff", fontSize: 13, fontWeight: 600, color: "#4A473F", cursor: "pointer", whiteSpace: "nowrap",
+    background: C.card, fontSize: 13, fontWeight: 600, color: C.chipText, cursor: "pointer", whiteSpace: "nowrap",
   },
-  chipOn: { background: C.green, color: "#fff", border: `1px solid ${C.green}` },
+  chipOn: { background: C.greenBg, color: C.onGreen, border: `1px solid ${C.greenBg}` },
   main: { padding: "14px 16px", display: "flex", flexDirection: "column", gap: 12 },
   hint: {
     textAlign: "left", padding: "12px 14px", borderRadius: 12, border: `1px dashed ${C.green}`,
-    background: "#F1F7EF", color: "#2F5B37", fontSize: 14, lineHeight: 1.4, cursor: "pointer",
+    background: C.hintBg, color: C.hintText, fontSize: 14, lineHeight: 1.4, cursor: "pointer",
   },
   favBanner: {
-    padding: "12px 14px", borderRadius: 12, background: "#FFF0F0", border: "1px solid #F5C9C9",
-    color: "#8A2E3A", fontSize: 14, lineHeight: 1.4,
+    padding: "12px 14px", borderRadius: 12, background: C.favBg, border: `1px solid ${C.favBorder}`,
+    color: C.favText, fontSize: 14, lineHeight: 1.4,
   },
   notice: {
-    padding: "12px 14px", background: "#FFF6E2", border: "1px solid #F0DFB0",
-    borderRadius: 10, color: "#7A5B16", fontSize: 14,
+    padding: "12px 14px", background: C.noteBg, border: `1px solid ${C.noteBorder}`,
+    borderRadius: 10, color: C.noteText, fontSize: 14,
   },
-  noticeError: { background: "#FDECEA", border: "1px solid #F3C4BE", color: "#8A2E22" },
+  noticeError: { background: C.errBg, border: `1px solid ${C.errBorder}`, color: C.errText },
   empty: { textAlign: "center", padding: "36px 16px", color: C.soft, fontSize: 14, lineHeight: 1.5 },
-  card: { background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, padding: 16, boxShadow: "0 1px 2px rgba(0,0,0,0.03)" },
-  cardCompact: { padding: 12, background: "#FDFCF9" },
+  card: { background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, padding: 16, boxShadow: `0 1px 2px ${C.shadow}` },
+  cardCompact: { padding: 12, background: C.cardAlt },
   cardTop: { display: "flex", gap: 12, alignItems: "flex-start" },
   metaRow: { display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" },
   category: { fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color: C.green },
   badge: { fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 10, textTransform: "uppercase", letterSpacing: ".04em" },
-  badgeVegan: { background: "#E3F1E1", color: "#2F6B2A" },
-  badgeVeggie: { background: "#FFF1D6", color: "#8A5A00" },
+  badgeVegan: { background: C.veganBg, color: C.veganText },
+  badgeVeggie: { background: C.veggieBg, color: C.veggieText },
   mealName: { margin: "4px 0 0", fontSize: 17, fontWeight: 700, lineHeight: 1.3 },
   sides: { margin: "4px 0 0", fontSize: 13, color: C.soft, lineHeight: 1.4 },
   price: { textAlign: "right", fontWeight: 800, fontSize: 17, whiteSpace: "nowrap" },
@@ -156,15 +183,15 @@ export const styles = {
   },
   rateRow: {
     display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
-    marginTop: 12, paddingTop: 10, borderTop: "1px solid #F1EDE3", flexWrap: "wrap",
+    marginTop: 12, paddingTop: 10, borderTop: `1px solid ${C.lineSoft}`, flexWrap: "wrap",
   },
   commentBar: { display: "flex", gap: 14, flexWrap: "wrap", marginTop: 6 },
   smallAction: { padding: "4px 0", background: "none", border: "none", fontSize: 13, fontWeight: 600, color: C.green, cursor: "pointer" },
-  textarea: { width: "100%", padding: 10, borderRadius: 10, border: `1px solid ${C.border}`, fontSize: 15, resize: "vertical", color: C.text },
-  ghostBtn: { padding: "8px 12px", borderRadius: 8, border: `1px solid ${C.border}`, background: "#fff", fontSize: 14, cursor: "pointer", color: "#4A473F" },
-  smallPrimary: { padding: "8px 14px", borderRadius: 8, border: `1px solid ${C.green}`, background: C.green, color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer" },
+  textarea: { width: "100%", padding: 10, borderRadius: 10, border: `1px solid ${C.border}`, fontSize: 15, resize: "vertical", color: C.text, background: C.input },
+  ghostBtn: { padding: "8px 12px", borderRadius: 8, border: `1px solid ${C.border}`, background: C.card, fontSize: 14, cursor: "pointer", color: C.chipText },
+  smallPrimary: { padding: "8px 14px", borderRadius: 8, border: `1px solid ${C.greenBg}`, background: C.greenBg, color: C.onGreen, fontSize: 14, fontWeight: 700, cursor: "pointer" },
   commentList: { listStyle: "none", margin: "10px 0 0", padding: 0, display: "flex", flexDirection: "column", gap: 10 },
-  comment: { background: "#F7F4EC", borderRadius: 10, padding: "8px 10px", fontSize: 14 },
+  comment: { background: C.commentBg, borderRadius: 10, padding: "8px 10px", fontSize: 14 },
   commentHead: { display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap", fontSize: 13 },
   mutedText: { color: C.faint, fontSize: 12, margin: "8px 0 0" },
   extrasToggle: { marginTop: 8, padding: "10px 0", background: "none", border: "none", fontSize: 14, fontWeight: 700, color: C.green, textAlign: "left", cursor: "pointer" },
@@ -186,12 +213,12 @@ export const styles = {
   badgeGrid: { display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8 },
   badgeCard: { background: C.card, border: `1px solid ${C.line}`, borderRadius: 12, padding: 12 },
   badgeLocked: { opacity: 0.55, filter: "grayscale(1)" },
-  progressTrack: { height: 5, background: "#EEE9DD", borderRadius: 4, marginTop: 8, overflow: "hidden" },
+  progressTrack: { height: 5, background: C.track, borderRadius: 4, marginTop: 8, overflow: "hidden" },
   progressFill: { height: "100%", background: C.green, borderRadius: 4 },
 
   // Navigation unten
   nav: {
-    position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 15, background: "rgba(251,249,244,.96)",
+    position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 15, background: C.navBg,
     borderTop: `1px solid ${C.line}`, display: "flex", justifyContent: "center",
     paddingBottom: "env(safe-area-inset-bottom)", backdropFilter: "blur(8px)",
   },
@@ -205,18 +232,18 @@ export const styles = {
   navIcon: { fontSize: 20, lineHeight: 1 },
 
   // Anmeldefenster & Hinweise
-  overlay: { position: "fixed", inset: 0, background: "rgba(30,28,24,.45)", zIndex: 20, display: "flex", alignItems: "flex-end", justifyContent: "center" },
-  sheet: { width: "100%", maxWidth: 480, background: C.bg, borderRadius: "18px 18px 0 0", padding: "18px 16px 28px", boxShadow: "0 -8px 30px rgba(0,0,0,.15)" },
+  overlay: { position: "fixed", inset: 0, background: C.overlay, zIndex: 20, display: "flex", alignItems: "flex-end", justifyContent: "center" },
+  sheet: { width: "100%", maxWidth: 480, background: C.bg, borderRadius: "18px 18px 0 0", padding: "18px 16px 28px", boxShadow: "0 -8px 30px rgba(0,0,0,.25)" },
   sheetHead: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 },
   closeBtn: { background: "none", border: "none", fontSize: 28, lineHeight: 1, cursor: "pointer", color: C.muted },
   field: { display: "block", marginBottom: 12 },
   fieldLabel: { display: "block", fontSize: 13, fontWeight: 700, color: C.soft, marginBottom: 4 },
-  input: { width: "100%", padding: "11px 12px", borderRadius: 10, border: `1px solid ${C.border}`, fontSize: 16, background: "#fff", color: C.text },
-  primaryBtn: { width: "100%", padding: "12px 14px", borderRadius: 10, border: `1px solid ${C.green}`, background: C.green, color: "#fff", fontSize: 16, fontWeight: 700, cursor: "pointer" },
+  input: { width: "100%", padding: "11px 12px", borderRadius: 10, border: `1px solid ${C.border}`, fontSize: 16, background: C.input, color: C.text },
+  primaryBtn: { width: "100%", padding: "12px 14px", borderRadius: 10, border: `1px solid ${C.greenBg}`, background: C.greenBg, color: C.onGreen, fontSize: 16, fontWeight: 700, cursor: "pointer" },
   linkBtn: { width: "100%", marginTop: 10, padding: 8, background: "none", border: "none", color: C.green, fontSize: 14, fontWeight: 600, cursor: "pointer" },
   toast: {
     position: "fixed", left: "50%", bottom: 84, transform: "translateX(-50%)", zIndex: 30,
-    background: C.text, color: "#fff", padding: "10px 16px", borderRadius: 10,
+    background: C.toastBg, color: C.toastText, padding: "10px 16px", borderRadius: 10,
     fontSize: 14, maxWidth: "calc(100% - 32px)", boxShadow: "0 6px 20px rgba(0,0,0,.2)",
   },
 };

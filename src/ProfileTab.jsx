@@ -1,13 +1,27 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "./supabase.js";
 import { BADGES, computeStats, dishKey, formatAvg, formatDate } from "./helpers.js";
-import { StarLine, styles, C } from "./ui.jsx";
+import { StarLine, Chip, styles, C } from "./ui.jsx";
+
+// Auswahl hell / dunkel
+function DesignPicker({ theme, onThemeChange }) {
+  return (
+    <>
+      <h3 style={styles.h3}>Darstellung</h3>
+      <div style={styles.chipRow}>
+        <Chip active={theme === "light"} onClick={() => onThemeChange("light")}>☀️ Hell</Chip>
+        <Chip active={theme === "dark"} onClick={() => onThemeChange("dark")}>🌙 Dunkel</Chip>
+      </div>
+    </>
+  );
+}
 
 // ============================================================================
 // Ansicht "Ich": Statistik, Abzeichen, Lieblingsgerichte, eigene Bewertungen
 // ============================================================================
 export default function ProfileTab({
-  userId, username, canteens, favoritesList, onToggleFavorite, needLogin, onSignOut, active,
+  userId, username, canteens, favoritesList, onToggleFavorite, needLogin, onSignOut,
+  theme, onThemeChange, active,
 }) {
   const [ratings, setRatings] = useState(null);
   const [dishAvg, setDishAvg] = useState({});
@@ -60,6 +74,7 @@ export default function ProfileTab({
             Anmelden oder registrieren
           </button>
         </div>
+        <DesignPicker theme={theme} onThemeChange={onThemeChange} />
       </main>
     );
   }
@@ -165,6 +180,8 @@ export default function ProfileTab({
           Alle {ratings.length} Bewertungen anzeigen
         </button>
       )}
+
+      <DesignPicker theme={theme} onThemeChange={onThemeChange} />
     </main>
   );
 }

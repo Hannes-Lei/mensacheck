@@ -1,0 +1,87 @@
+// ============================================================================
+// Kleine Hilfsfunktionen, die überall in der App gebraucht werden
+// ============================================================================
+
+// Heutiges Datum in deutscher Zeit als "2026-10-19"
+export function todayBerlin() {
+  return new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Berlin" }).format(new Date());
+}
+
+// Datum vor X Tagen als "2026-10-12"
+export function daysAgo(n) {
+  const d = new Date(todayBerlin() + "T12:00:00");
+  d.setDate(d.getDate() - n);
+  return d.toISOString().slice(0, 10);
+}
+
+export function formatPrice(p) {
+  if (p == null) return null;
+  return Number(p).toFixed(2).replace(".", ",") + " €";
+}
+
+export function formatAvg(n) {
+  return Number(n).toFixed(1).replace(".", ",");
+}
+
+export function formatDate(iso) {
+  return new Date(iso + "T12:00:00").toLocaleDateString("de-DE", {
+    weekday: "short", day: "numeric", month: "numeric",
+  });
+}
+
+export function dayLabel(iso, today) {
+  const d = new Date(iso + "T12:00:00");
+  const weekday = d.toLocaleDateString("de-DE", { weekday: "short" }).replace(".", "");
+  const date = d.toLocaleDateString("de-DE", { day: "numeric", month: "numeric" });
+  return iso === today ? `Heute · ${date}` : `${weekday} · ${date}`;
+}
+
+export function timeAgo(iso) {
+  const min = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (min < 1) return "gerade eben";
+  if (min < 60) return `vor ${min} Min.`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `vor ${h} Std.`;
+  return new Date(iso).toLocaleDateString("de-DE", { day: "numeric", month: "numeric" });
+}
+
+// Schlüssel für ein Gericht über alle Tage hinweg (für Favoriten & Ranglisten)
+export function dishKey(canteenId, mealName) {
+  return `${canteenId}|${mealName}`;
+}
+
+// Fehlermeldungen von Supabase verständlich machen
+export function friendlyError(err) {
+  const msg = (err?.message || "").toLowerCase();
+  if (msg.includes("invalid login")) return "E-Mail oder Passwort stimmt nicht.";
+  if (msg.includes("already registered") || msg.includes("already been registered"))
+    return "Mit dieser E-Mail gibt es schon ein Konto. Melde dich an.";
+  if (msg.includes("password") && msg.includes("6")) return "Das Passwort braucht mindestens 6 Zeichen.";
+  if (msg.includes("email") && msg.includes("invalid")) return "Bitte eine gültige E-Mail-Adresse eingeben.";
+  if (msg.includes("rate limit")) return "Zu viele Versuche. Bitte kurz warten.";
+  if (msg.includes("row-level security")) return "Das darfst du (noch) nicht bewerten.";
+  if (msg.includes("fetch")) return "Keine Verbindung. Bist du online?";
+  return err?.message || "Da ist etwas schiefgelaufen.";
+}
+
+// ---- Abzeichen -------------------------------------------------------------
+// Werden aus deinen Bewertungen berechnet, nichts davon wird extra gespeichert.
+export const BADGES = [
+  { id: "first",    icon: "🍽️", name: "Erster Bissen",     text: "Deine erste Bewertung",           metric: "ratings",  goal: 1 },
+  { id: "regular",  icon: "🥄", name: "Stammgast",         text: "10 Bewertungen",                  metric: "ratings",  goal: 10 },
+  { id: "critic",   icon: "🧐", name: "Mensa-Kritiker",    text: "50 Bewertungen",                  metric: "ratings",  goal: 50 },
+  { id: "legend",   icon: "👑", name: "Mensa-Legende",     text: "100 Bewertungen",                 metric: "ratings",  goal: 100 },
+  { id: "writer",   icon: "✍️", name: "Wortgewandt",       text: "10 Kommentare",                   metric: "comments", goal: 10 },
+  { id: "explorer", icon: "🧭", name: "Leipzig-Entdecker", text: "In 3 verschiedenen Mensen bewertet", metric: "canteens", goal: 3 },
+  { id: "allstar",  icon: "🗺️", name: "Mensa-Weltreise",   text: "In 5 verschiedenen Mensen bewertet", metric: "canteens", goal: 5 },
+  { id: "loyal",    icon: "📅", name: "Treue Seele",       text: "An 10 verschiedenen Tagen bewertet",  metric: "days",     goal: 10 },
+];
+
+export function computeStats(ratings) {
+  return {
+    ratings: ratings.length,
+    comments: ratings.filter((r) => (r.comment || "").trim()).length,
+    canteens: new Set(ratings.map((r) => r.canteen_id)).size,
+    days: new Set(ratings.map((r) => r.meal_date)).size,
+  };
+}

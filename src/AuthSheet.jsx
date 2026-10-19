@@ -6,7 +6,7 @@ import { styles, C } from "./ui.jsx";
 // ============================================================================
 // Fenster zum Registrieren und Anmelden
 // ============================================================================
-export default function AuthSheet({ onClose }) {
+export default function AuthSheet({ onClose, note }) {
   const [mode, setMode] = useState("register"); // register | login
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
@@ -49,7 +49,7 @@ export default function AuthSheet({ onClose }) {
           <button type="button" onClick={onClose} style={styles.closeBtn} aria-label="Schließen">×</button>
         </div>
         <p style={{ margin: "0 0 14px", color: C.muted, fontSize: 14 }}>
-          {mode === "register" ? "Damit deine Bewertungen für alle sichtbar werden." : "Schön, dass du wieder da bist."}
+          {note || (mode === "register" ? "Damit deine Bewertungen für alle sichtbar werden." : "Schön, dass du wieder da bist.")}
         </p>
 
         {mode === "register" && (

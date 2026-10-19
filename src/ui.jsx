@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 
 // ============================================================================
 // Gemeinsame Bausteine und das Aussehen (Farben, Abstände) der ganzen App
@@ -42,44 +42,133 @@ const cssVars = (t) => Object.entries(t).map(([k, v]) => `--${k}: ${v};`).join("
 // C.text wird zu "var(--text)" usw.
 export const C = Object.fromEntries(Object.keys(LIGHT).map((k) => [k, `var(--${k})`]));
 
-export function Stars({ value, onRate, size = 26, disabled = false }) {
-  const [hover, setHover] = useState(0);
+// Ein Stern, der ganz, halb oder gar nicht gefüllt sein kann
+const STAR_PATH = "M12 2l2.95 6.62 7.05.68-5.33 4.73 1.56 7.04L12 17.4l-6.23 3.67 1.56-7.04L2 9.3l7.05-.68z";
+
+function StarIcon({ fill, size }) {
   return (
-    <div style={{ display: "inline-flex", gap: 2, opacity: disabled ? 0.45 : 1 }}>
-      {[1, 2, 3, 4, 5].map((n) => {
-        const active = (hover || value) >= n;
-        return (
-          <button
-            key={n}
-            type="button"
-            disabled={disabled}
-            onMouseEnter={() => !disabled && setHover(n)}
-            onMouseLeave={() => setHover(0)}
-            onClick={() => onRate(n)}
-            aria-label={`${n} von 5 Sternen`}
-            style={{
-              background: "none", border: "none", padding: 2,
-              cursor: disabled ? "default" : "pointer", fontSize: size, lineHeight: 1,
-              color: active ? C.gold : C.starOff,
-              transition: "color .12s, transform .12s",
-              transform: hover === n ? "scale(1.18)" : "scale(1)",
-            }}
-          >
-            ★
-          </button>
-        );
-      })}
+    <span style={{ position: "relative", display: "inline-block", width: size, height: size, flexShrink: 0 }}>
+      <svg viewBox="0 0 24 24" width={size} height={size} style={{ display: "block" }} aria-hidden="true">
+        <path d={STAR_PATH} fill={C.starOff} />
+      </svg>
+      {fill > 0 && (
+        <span style={{ position: "absolute", top: 0, left: 0, height: size, width: `${fill * 100}%`, overflow: "hidden" }}>
+          <svg viewBox="0 0 24 24" width={size} height={size} style={{ display: "block" }} aria-hidden="true">
+            <path d={STAR_PATH} fill={C.gold} />
+          </svg>
+        </span>
+      )}
+    </span>
+  );
+}
+
+const fillFor = (value, i) => Math.max(0, Math.min(1, value - i));
+
+// Sterne zum Bewerten in halben Schritten (0,5 bis 5).
+// Tippen auf die linke Hälfte eines Sterns = halber Stern.
+// Mit dem Finger seitlich über die Sterne wischen geht auch.
+export function Stars({ value, onRate, size = 28, disabled = false }) {
+  const ref = useRef(null);
+  const dragging = useRef(false);
+  const [preview, setPreview] = useState(null);
+
+  function valueAt(clientX) {
+    const r = ref.current.getBoundingClientRect();
+    const x = Math.min(Math.max(clientX - r.left, 0), r.width - 0.01);
+    return Math.max(0.5, Math.ceil((x / r.width) * 10) / 2);
+  }
+
+  const shown = preview ?? value ?? 0;
+
+  return (
+    <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+      <div
+        ref={ref}
+        role="slider"
+        tabIndex={disabled ? -1 : 0}
+        aria-label="Deine Bewertung"
+        aria-valuemin={0.5}
+        aria-valuemax={5}
+        aria-valuenow={value || 0}
+        aria-valuetext={value ? `${formatStars(value)} von 5 Sternen` : "Noch nicht bewertet"}
+        aria-disabled={disabled}
+        onPointerDown={(e) => {
+          if (disabled) return;
+          dragging.current = true;
+          e.currentTarget.setPointerCapture?.(e.pointerId);
+          setPreview(valueAt(e.clientX));
+        }}
+        onPointerMove={(e) => {
+          if (disabled) return;
+          if (dragging.current || e.pointerType === "mouse") setPreview(valueAt(e.clientX));
+        }}
+        onPointerUp={(e) => {
+          if (!dragging.current) return;
+          dragging.current = false;
+          const v = valueAt(e.clientX);
+          setPreview(null);
+          onRate(v);
+        }}
+        onPointerCancel={() => { dragging.current = false; setPreview(null); }}
+        onPointerLeave={() => { if (!dragging.current) setPreview(null); }}
+        onKeyDown={(e) => {
+          if (disabled) return;
+          const step = e.key === "ArrowRight" || e.key === "ArrowUp" ? 0.5 : e.key === "ArrowLeft" || e.key === "ArrowDown" ? -0.5 : 0;
+          if (!step) return;
+          e.preventDefault();
+          onRate(Math.min(5, Math.max(0.5, (value || 0) + step)));
+        }}
+        style={{
+          display: "inline-flex", gap: 3, padding: "4px 0",
+          cursor: disabled ? "default" : "pointer", opacity: disabled ? 0.45 : 1,
+          touchAction: "pan-y", userSelect: "none", WebkitUserSelect: "none",
+          WebkitTapHighlightColor: "transparent", outlineOffset: 4,
+        }}
+      >
+        {[0, 1, 2, 3, 4].map((i) => <StarIcon key={i} fill={fillFor(shown, i)} size={size} />)}
+      </div>
+      {preview != null && (
+        <span style={{ fontSize: 15, fontWeight: 800, color: C.gold, minWidth: 26 }}>{formatStars(preview)}</span>
+      )}
     </div>
   );
 }
 
-// Nur-Anzeige von Sternen, z.B. "★★★★☆"
+// Zahl mit Komma: 4.5 -> "4,5"
+export function formatStars(v) {
+  return Number(v).toFixed(1).replace(".", ",");
+}
+
+// Nur-Anzeige, z.B. Durchschnitt 3,7 -> 3½ Sterne (auf halbe Sterne gerundet)
 export function StarLine({ value, size = 14 }) {
-  const full = Math.round(Number(value));
+  const v = Math.round(Number(value) * 2) / 2;
   return (
-    <span style={{ fontSize: size, letterSpacing: 1 }} aria-label={`${value} von 5 Sternen`}>
-      <span style={{ color: C.gold }}>{"★".repeat(full)}</span>
-      <span style={{ color: C.starOff }}>{"★".repeat(5 - full)}</span>
+    <span
+      style={{ display: "inline-flex", gap: 1, verticalAlign: "middle" }}
+      role="img"
+      aria-label={`${formatStars(value)} von 5 Sternen`}
+    >
+      {[0, 1, 2, 3, 4].map((i) => <StarIcon key={i} fill={fillFor(v, i)} size={size} />)}
+    </span>
+  );
+}
+
+// Rundes Bild mit Anfangsbuchstaben, Farbe passend zum Namen
+const AVATAR_COLORS = ["#EE6A24", "#22408F", "#3C6E47", "#B5651D", "#7B4FA0", "#C0392B", "#16808A"];
+export function Avatar({ name = "?", size = 32 }) {
+  let h = 0;
+  for (const ch of name) h = (h * 31 + ch.codePointAt(0)) >>> 0;
+  return (
+    <span
+      aria-hidden="true"
+      style={{
+        width: size, height: size, borderRadius: "50%", flexShrink: 0,
+        background: AVATAR_COLORS[h % AVATAR_COLORS.length], color: "#fff",
+        display: "inline-flex", alignItems: "center", justifyContent: "center",
+        fontWeight: 800, fontSize: size * 0.45,
+      }}
+    >
+      {[...name.trim()][0]?.toUpperCase() || "?"}
     </span>
   );
 }

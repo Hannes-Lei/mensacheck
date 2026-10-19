@@ -3,21 +3,22 @@ import { supabase } from "./supabase.js";
 import {
   todayBerlin, formatPrice, formatAvg, dayLabel, timeAgo, friendlyError, dishKey,
 } from "./helpers.js";
-import { Stars, Chip, DietBadge, styles, C } from "./ui.jsx";
+import { Stars, Chip, DietBadge, formatStars, styles, C } from "./ui.jsx";
+import { CommentItem, THREAD_SELECT } from "./Interactions.jsx";
 
 // ============================================================================
 // Ansicht "Heute": Speiseplan, Bewerten, Kommentieren, Favoriten
 // ============================================================================
 
 // ---- Kommentare zu einem Gericht ------------------------------------------
-function CommentList({ canteenId, date, mealName, refreshKey }) {
+function CommentList({ canteenId, date, mealName, refreshKey, ...thread }) {
   const [items, setItems] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
     supabase
       .from("ratings")
-      .select("id, stars, comment, created_at, profiles(username)")
+      .select(THREAD_SELECT)
       .eq("canteen_id", canteenId)
       .eq("meal_date", date)
       .eq("meal_name", mealName)
@@ -34,24 +35,16 @@ function CommentList({ canteenId, date, mealName, refreshKey }) {
 
   return (
     <ul style={styles.commentList}>
-      {items.map((c) => (
-        <li key={c.id} style={styles.comment}>
-          <div style={styles.commentHead}>
-            <strong>{c.profiles?.username || "Jemand"}</strong>
-            <span style={{ color: C.gold }}>{"★".repeat(c.stars)}</span>
-            <span style={styles.mutedText}>{timeAgo(c.created_at)}</span>
-          </div>
-          <p style={{ margin: "2px 0 0", lineHeight: 1.4 }}>{c.comment}</p>
-        </li>
-      ))}
+      {items.map((c) => <CommentItem key={c.id} item={c} {...thread} />)}
     </ul>
   );
 }
 
 // ---- Karte für ein Gericht -------------------------------------------------
 function MealCard({
-  meal: m, stats, mine, isFavorite, canRate, isFuture,
+  meal: m, stats, mine, isFavorite, canRate, isFuture, friendRatings = [],
   onRate, onComment, onRemove, onFavorite, onShare, needLogin, canteenId, date, compact = false,
+  thread,
 }) {
   const [showAllergens, setShowAllergens] = useState(false);
   const [showComments, setShowComments] = useState(false);
@@ -120,7 +113,7 @@ function MealCard({
       )}
 
       <div style={styles.rateRow}>
-        <Stars value={mine?.stars || 0} onRate={handleRate} size={compact ? 22 : 26} disabled={isFuture} />
+        <Stars value={mine?.stars || 0} onRate={handleRate} size={compact ? 24 : 28} disabled={isFuture} />
         <div style={{ fontSize: 14 }}>
           {stats?.votes > 0 ? (
             <>
@@ -132,6 +125,17 @@ function MealCard({
           )}
         </div>
       </div>
+
+      {friendRatings.length > 0 && (
+        <div style={{ fontSize: 13, color: C.soft, marginTop: 6, lineHeight: 1.5 }}>
+          👥{" "}
+          {friendRatings.map((f, i) => (
+            <span key={f.name} style={{ whiteSpace: "nowrap" }}>
+              {i > 0 && " · "}<strong>{f.name}</strong> <span style={{ color: C.gold }}>★</span> {formatStars(f.stars)}
+            </span>
+          ))}
+        </div>
+      )}
 
       <div style={styles.commentBar}>
         {!isFuture && mine?.stars > 0 && !editing && (
@@ -174,7 +178,7 @@ function MealCard({
         </div>
       )}
 
-      {showComments && <CommentList canteenId={canteenId} date={date} mealName={m.name} refreshKey={refreshKey} />}
+      {showComments && <CommentList canteenId={canteenId} date={date} mealName={m.name} refreshKey={refreshKey} {...thread} />}
     </article>
   );
 }
@@ -227,8 +231,8 @@ function matchesDiet(m, dietFilter) {
 
 // ---- Die Ansicht -----------------------------------------------------------
 export default function TodayTab({
-  canteens, canteenId, onCanteenChange, userId, favorites, onToggleFavorite, needLogin, showToast,
-  onActivity = () => {},
+  canteens, canteenId, onCanteenChange, userId, username, friends, favorites, onToggleFavorite,
+  needLogin, showToast, onActivity = () => {},
 }) {
   const today = todayBerlin();
 
@@ -245,6 +249,7 @@ export default function TodayTab({
   const [mine, setMine] = useState({});
   const [archive, setArchive] = useState(null);    // gemerkte Gerichte des Tages
   const [ratedMeals, setRatedMeals] = useState({}); // bewertete Gerichte des Tages
+  const [dayRatings, setDayRatings] = useState([]);  // wer hat was bewertet (für Freunde-Zeile)
 
   // 1) Aktueller Speiseplan laden – und die heutigen Gerichte merken
   useEffect(() => {
@@ -283,7 +288,7 @@ export default function TodayTab({
       : Promise.resolve({ data: [] });
     const ratedReq = supabase
       .from("ratings")
-      .select("meal_name, category, price")
+      .select("meal_name, category, price, user_id, stars")
       .eq("canteen_id", canteenId)
       .eq("meal_date", date)
       .limit(1000);
@@ -302,11 +307,22 @@ export default function TodayTab({
     const known = {};
     for (const r of rated || []) known[r.meal_name] ??= r;
     setRatedMeals(known);
+    setDayRatings(rated || []);
     setArchive(arch || []);
   }, [canteenId, date, userId]);
 
   // Beim Wechsel von Mensa oder Tag alte Daten nicht kurz falsch anzeigen
-  useEffect(() => { setStats({}); setMine({}); setRatedMeals({}); setArchive(null); }, [canteenId, date]);
+  useEffect(() => { setStats({}); setMine({}); setRatedMeals({}); setDayRatings([]); setArchive(null); }, [canteenId, date]);
+
+  // Welche Freunde haben welches Gericht bewertet?
+  const friendsByMeal = useMemo(() => {
+    const out = {};
+    for (const r of dayRatings) {
+      if (r.user_id === userId || !friends?.has(r.user_id)) continue;
+      (out[r.meal_name] ||= []).push({ name: friends.get(r.user_id), stars: r.stars });
+    }
+    return out;
+  }, [dayRatings, friends, userId]);
   useEffect(() => { loadRatings(); }, [loadRatings]);
   useEffect(() => {
     const t = setInterval(loadRatings, 60000);
@@ -448,6 +464,8 @@ export default function TodayTab({
     onComment: comment,
     onRemove: removeRating,
     onShare: share,
+    friendRatings: friendsByMeal[m.name] || [],
+    thread: { userId, username, friends, needLogin, showToast },
     onFavorite: (meal) => onToggleFavorite(canteenId, meal.name),
     needLogin,
     canteenId,

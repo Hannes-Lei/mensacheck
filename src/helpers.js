@@ -45,9 +45,25 @@ export function timeAgo(iso) {
   return new Date(iso).toLocaleDateString("de-DE", { day: "numeric", month: "numeric" });
 }
 
-// Schlüssel für ein Gericht über alle Tage hinweg (für Favoriten & Ranglisten)
+// Kurzes Datum wie "13.10."
+export function shortDate(iso) {
+  const [, m, d] = String(iso).split("-");
+  return `${Number(d)}.${Number(m)}.`;
+}
+
+// Vergleichsname eines Gerichts: klein, ohne Anführungszeichen, einfache
+// Leerzeichen. Muss genau zu dish_key() in Supabase (Skript 05) passen.
+export function dishName(mealName) {
+  return String(mealName || "")
+    .replace(/["„“”'`´]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Schlüssel für ein Gericht über alle Tage hinweg (Favoriten, Ranglisten)
 export function dishKey(canteenId, mealName) {
-  return `${canteenId}|${mealName}`;
+  return `${canteenId}|${dishName(mealName)}`;
 }
 
 // Fehlermeldungen von Supabase verständlich machen

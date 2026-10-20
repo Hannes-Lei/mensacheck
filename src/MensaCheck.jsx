@@ -215,9 +215,13 @@ export default function MensaCheck() {
     if (!userId) return setShowAuth(true);
     const key = dishKey(cId, mealName);
     if (favorites.has(key)) {
+      // gespeicherte Schreibweise(n) verwenden – kann sich leicht unterscheiden
+      const names = favoritesList
+        .filter((f) => dishKey(f.canteen_id, f.meal_name) === key)
+        .map((f) => f.meal_name);
       setFavoritesList((l) => l.filter((f) => dishKey(f.canteen_id, f.meal_name) !== key));
       const { error } = await supabase.from("favorites").delete()
-        .eq("user_id", userId).eq("canteen_id", cId).eq("meal_name", mealName);
+        .eq("user_id", userId).eq("canteen_id", cId).in("meal_name", names.length ? names : [mealName]);
       if (error) showToast(friendlyError(error));
     } else {
       setFavoritesList((l) => [{ canteen_id: cId, meal_name: mealName }, ...l]);

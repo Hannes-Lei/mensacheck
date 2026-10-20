@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "./supabase.js";
 import {
-  todayBerlin, formatPrice, formatAvg, dayLabel, timeAgo, friendlyError, dishKey, isPastaExtra,
+  todayBerlin, formatPrice, formatAvg, dayLabel, friendlyError, dishKey, dishName, shortDate, isPastaExtra,
 } from "./helpers.js";
 import { Stars, Chip, DietBadge, formatStars, styles, C } from "./ui.jsx";
 import { CommentItem, THREAD_SELECT } from "./Interactions.jsx";
@@ -10,7 +10,7 @@ import { CommentItem, THREAD_SELECT } from "./Interactions.jsx";
 // Ansicht "Heute": Speiseplan, Bewerten, Kommentieren, Favoriten
 // ============================================================================
 
-// ---- Kommentare zu einem Gericht ------------------------------------------
+// ---- Kommentare zu einem Gericht (aus allen Tagen) ------------------------
 function CommentList({ canteenId, date, mealName, refreshKey, ...thread }) {
   const [items, setItems] = useState(null);
 
@@ -20,30 +20,55 @@ function CommentList({ canteenId, date, mealName, refreshKey, ...thread }) {
       .from("ratings")
       .select(THREAD_SELECT)
       .eq("canteen_id", canteenId)
-      .eq("meal_date", date)
-      .eq("meal_name", mealName)
+      .eq("dish", dishName(mealName))
       .not("comment", "is", null)
       .neq("comment", "")
       .order("created_at", { ascending: false })
       .limit(50)
       .then(({ data }) => !cancelled && setItems(data || []));
     return () => { cancelled = true; };
-  }, [canteenId, date, mealName, refreshKey]);
+  }, [canteenId, mealName, refreshKey]);
 
   if (items === null) return <p style={styles.mutedText}>Kommentare werden geladen…</p>;
   if (items.length === 0) return <p style={styles.mutedText}>Noch keine Kommentare.</p>;
 
   return (
     <ul style={styles.commentList}>
-      {items.map((c) => <CommentItem key={c.id} item={c} {...thread} />)}
+      {items.map((c) => (
+        <CommentItem
+          key={c.id} item={c} {...thread}
+          dayNote={c.meal_date !== date ? `am ${shortDate(c.meal_date)}` : null}
+        />
+      ))}
     </ul>
+  );
+}
+
+// Rechts neben den Sternen: Gesamtbewertung, darunter klein der Tag
+function RatingSummary({ total, day, date, today }) {
+  const votes = (n) => `${n} ${n === 1 ? "Stimme" : "Stimmen"}`;
+  if (!total?.votes) {
+    return <div style={{ fontSize: 14, color: C.faint, textAlign: "right" }}>Noch keine Bewertung</div>;
+  }
+  let sub = null;
+  if (day?.votes > 0 && day.votes < total.votes) {
+    sub = `${date === today ? "heute" : "an dem Tag"} ${formatAvg(day.avg_stars)} · ${votes(day.votes)}`;
+  } else if (!(day?.votes > 0) && total.last_date) {
+    sub = `zuletzt am ${shortDate(total.last_date)}`;
+  }
+  return (
+    <div style={{ fontSize: 14, textAlign: "right", lineHeight: 1.3 }}>
+      <strong>{formatAvg(total.avg_stars)}</strong>
+      <span style={{ color: C.muted }}> · {votes(total.votes)}</span>
+      {sub && <div style={{ fontSize: 12, color: C.faint }}>{sub}</div>}
+    </div>
   );
 }
 
 // ---- Karte für ein Gericht -------------------------------------------------
 function MealCard({
-  meal: m, stats, mine, isFavorite, canRate, isFuture, friendRatings = [],
-  onRate, onComment, onRemove, onFavorite, onShare, needLogin, canteenId, date, compact = false,
+  meal: m, stats, total, mine, isFavorite, canRate, isFuture, friendRatings = [],
+  onRate, onComment, onRemove, onFavorite, onShare, needLogin, canteenId, date, today, compact = false,
   thread,
 }) {
   const [showAllergens, setShowAllergens] = useState(false);
@@ -75,7 +100,7 @@ function MealCard({
     }
   }
 
-  const commentCount = stats?.comments || 0;
+  const commentCount = total?.comments || 0;
 
   return (
     <article data-meal={m.name} style={{ ...styles.card, ...(compact ? styles.cardCompact : {}), scrollMarginTop: 200 }}>
@@ -114,16 +139,7 @@ function MealCard({
 
       <div style={styles.rateRow}>
         <Stars value={mine?.stars || 0} onRate={handleRate} size={compact ? 24 : 28} disabled={isFuture} />
-        <div style={{ fontSize: 14 }}>
-          {stats?.votes > 0 ? (
-            <>
-              <strong>{formatAvg(stats.avg_stars)}</strong>
-              <span style={{ color: C.muted }}> · {stats.votes} {stats.votes === 1 ? "Stimme" : "Stimmen"}</span>
-            </>
-          ) : (
-            <span style={{ color: C.faint }}>{isFuture ? "Bewertbar ab dem Tag" : "Noch keine Bewertung"}</span>
-          )}
-        </div>
+        <RatingSummary total={total} day={stats} date={date} today={today} />
       </div>
 
       {friendRatings.length > 0 && (
@@ -132,6 +148,7 @@ function MealCard({
           {friendRatings.map((f, i) => (
             <span key={f.name} style={{ whiteSpace: "nowrap" }}>
               {i > 0 && " · "}<strong>{f.name}</strong> <span style={{ color: C.gold }}>★</span> {formatStars(f.stars)}
+              {f.date !== date && <span style={{ color: C.faint, fontSize: 12 }}> ({shortDate(f.date)})</span>}
             </span>
           ))}
         </div>
@@ -143,7 +160,7 @@ function MealCard({
               {mine.comment ? "✎ Kommentar bearbeiten" : "+ Kommentar schreiben"}
             </button>
           )}
-        {!isFuture && commentCount > 0 && (
+        {commentCount > 0 && (
             <button type="button" style={styles.smallAction} onClick={() => setShowComments((s) => !s)}>
               💬 {commentCount} {commentCount === 1 ? "Kommentar" : "Kommentare"} {showComments ? "▴" : "▾"}
             </button>
@@ -223,6 +240,13 @@ function rememberToday(canteenId, day) {
     .then(({ error }) => error && console.warn("Gerichte merken:", error.message));
 }
 
+// Reihenfolge nach Gesamtbewertung: erst Gerichte mit mindestens 2 Stimmen
+// (damit nicht eine einzelne 5 gewinnt), dann Schnitt, dann Anzahl Stimmen
+function byTotal(A, B) {
+  const a = A || { votes: 0, avg_stars: 0 }, b = B || { votes: 0, avg_stars: 0 };
+  return (b.votes >= 2) - (a.votes >= 2) || b.avg_stars - a.avg_stars || b.votes - a.votes;
+}
+
 function matchesDiet(m, dietFilter) {
   if (dietFilter === "vegan") return m.diet === "vegan";
   if (dietFilter === "vegetarisch") return m.diet === "vegan" || m.diet === "vegetarisch";
@@ -249,7 +273,8 @@ export default function TodayTab({
   const [mine, setMine] = useState({});
   const [archive, setArchive] = useState(null);    // gemerkte Gerichte des Tages
   const [ratedMeals, setRatedMeals] = useState({}); // bewertete Gerichte des Tages
-  const [dayRatings, setDayRatings] = useState([]);  // wer hat was bewertet (für Freunde-Zeile)
+  const [totals, setTotals] = useState({});         // Gesamtbewertung je Gericht (alle Tage)
+  const [friendHistory, setFriendHistory] = useState([]); // letzte Bewertungen der Freunde
 
   // 1) Aktueller Speiseplan laden – und die heutigen Gerichte merken
   useEffect(() => {
@@ -274,7 +299,14 @@ export default function TodayTab({
     return () => { cancelled = true; };
   }, [canteenId, today]);
 
-  // 2) Bewertungen + gemerkte Gerichte für Mensa und Tag laden
+  // Namen der Gerichte laut Plan für den gewählten Tag
+  const planNames = useMemo(
+    () => (days.find((d) => d.date === date)?.meals || []).map((m) => m.name),
+    [days, date]
+  );
+
+  // 2) Bewertungen + gemerkte Gerichte für Mensa und Tag laden,
+  //    danach die Gesamtbewertung dieser Gerichte über alle Tage
   const loadRatings = useCallback(async () => {
     if (!date) return;
     const statsReq = supabase
@@ -288,7 +320,7 @@ export default function TodayTab({
       : Promise.resolve({ data: [] });
     const ratedReq = supabase
       .from("ratings")
-      .select("meal_name, category, price, user_id, stars")
+      .select("meal_name, category, price")
       .eq("canteen_id", canteenId)
       .eq("meal_date", date)
       .limit(1000);
@@ -307,22 +339,48 @@ export default function TodayTab({
     const known = {};
     for (const r of rated || []) known[r.meal_name] ??= r;
     setRatedMeals(known);
-    setDayRatings(rated || []);
     setArchive(arch || []);
-  }, [canteenId, date, userId]);
+
+    // Gesamtbewertung aller Gerichte dieses Tages (über alle Tage hinweg)
+    const keys = [...new Set(
+      [...planNames, ...(arch || []).map((r) => r.meal_name), ...Object.keys(known)].map(dishName)
+    )].filter(Boolean);
+    if (keys.length === 0) { setTotals({}); setFriendHistory([]); return; }
+
+    const friendIds = [...(friends?.keys() || [])].filter((id) => id !== userId);
+    const totalsReq = supabase
+      .from("dish_stats")
+      .select("dish, avg_stars, votes, comments, days, last_date")
+      .eq("canteen_id", canteenId)
+      .in("dish", keys);
+    const friendsReq = friendIds.length
+      ? supabase.from("ratings").select("user_id, dish, stars, meal_date")
+          .eq("canteen_id", canteenId).in("dish", keys).in("user_id", friendIds)
+          .order("meal_date", { ascending: false }).limit(1000)
+      : Promise.resolve({ data: [] });
+    const [{ data: t }, { data: fr }] = await Promise.all([totalsReq, friendsReq]);
+    setTotals(Object.fromEntries((t || []).map((r) => [r.dish, r])));
+    setFriendHistory(fr || []);
+  }, [canteenId, date, userId, planNames, friends]);
 
   // Beim Wechsel von Mensa oder Tag alte Daten nicht kurz falsch anzeigen
-  useEffect(() => { setStats({}); setMine({}); setRatedMeals({}); setDayRatings([]); setArchive(null); }, [canteenId, date]);
+  useEffect(() => {
+    setStats({}); setMine({}); setRatedMeals({}); setArchive(null); setTotals({}); setFriendHistory([]);
+  }, [canteenId, date]);
 
-  // Welche Freunde haben welches Gericht bewertet?
-  const friendsByMeal = useMemo(() => {
+  // Was haben die Freunde zuletzt zu welchem Gericht gesagt? (neueste je Freund)
+  const friendsByDish = useMemo(() => {
     const out = {};
-    for (const r of dayRatings) {
-      if (r.user_id === userId || !friends?.has(r.user_id)) continue;
-      (out[r.meal_name] ||= []).push({ name: friends.get(r.user_id), stars: r.stars });
+    const seen = new Set();
+    for (const r of friendHistory) {          // ist nach Datum absteigend sortiert
+      if (!friends?.has(r.user_id) || seen.has(r.dish + "|" + r.user_id)) continue;
+      seen.add(r.dish + "|" + r.user_id);
+      (out[r.dish] ||= []).push({ name: friends.get(r.user_id), stars: r.stars, date: r.meal_date });
     }
     return out;
-  }, [dayRatings, friends, userId]);
+  }, [friendHistory, friends]);
+
+  const totalOf = (name) => totals[dishName(name)];
   useEffect(() => { loadRatings(); }, [loadRatings]);
   useEffect(() => {
     const t = setInterval(loadRatings, 60000);
@@ -378,7 +436,7 @@ export default function TodayTab({
 
   // Gericht teilen: Teilen-Menü des Handys, sonst Text kopieren
   async function share(meal) {
-    const s = stats[meal.name];
+    const s = totalOf(meal.name);
     const mensa = canteens.find((c) => c.id === canteenId)?.name || "Mensa";
     const when = date === today ? "Heute" : `Am ${dayLabel(date, today).replace(" · ", ", ")}`;
     const rating = s?.votes > 0
@@ -430,9 +488,7 @@ export default function TodayTab({
 
     const filtered = all.filter((m) => matchesDiet(m, dietFilter));
     const sorted = sortByRating
-      ? [...filtered].sort((a, b) =>
-          (stats[b.name]?.avg_stars || 0) - (stats[a.name]?.avg_stars || 0) ||
-          (stats[b.name]?.votes || 0) - (stats[a.name]?.votes || 0))
+      ? [...filtered].sort((a, b) => byTotal(totals[dishName(a.name)], totals[dishName(b.name)]))
       : filtered;
 
     return {
@@ -440,13 +496,14 @@ export default function TodayTab({
       extras: sorted.filter((m) => !m.isMain),
       favToday: all.filter((m) => favorites.has(dishKey(canteenId, m.name))),
     };
-  }, [currentDay, archive, ratedMeals, isFuture, dietFilter, sortByRating, stats, favorites, canteenId]);
+  }, [currentDay, archive, ratedMeals, isFuture, dietFilter, sortByRating, totals, favorites, canteenId]);
 
-  // Tagessieger: bestbewertetes Hauptgericht (bei Gleichstand mehr Stimmen)
-  const winner = isFuture ? null : mains
-    .filter((m) => stats[m.name]?.votes > 0)
-    .sort((a, b) =>
-      stats[b.name].avg_stars - stats[a.name].avg_stars || stats[b.name].votes - stats[a.name].votes)[0];
+  // Tagessieger: Hauptgericht mit der besten Gesamtbewertung. Gerichte mit
+  // mindestens 2 Stimmen gehen vor, damit nicht eine einzelne 5 gewinnt.
+  const winner = mains
+    .filter((m) => totalOf(m.name)?.votes > 0)
+    .sort((a, b) => byTotal(totalOf(a.name), totalOf(b.name)))[0];
+  const winnerTotal = winner && totalOf(winner.name);
 
   function jumpTo(name) {
     const el = [...document.querySelectorAll("article[data-meal]")].find((a) => a.dataset.meal === name);
@@ -456,6 +513,7 @@ export default function TodayTab({
   const cardProps = (m, compact = false) => ({
     meal: m,
     stats: stats[m.name],
+    total: totalOf(m.name),
     mine: mine[m.name],
     isFavorite: favorites.has(dishKey(canteenId, m.name)),
     canRate: !!userId,
@@ -464,12 +522,13 @@ export default function TodayTab({
     onComment: comment,
     onRemove: removeRating,
     onShare: share,
-    friendRatings: friendsByMeal[m.name] || [],
+    friendRatings: friendsByDish[dishName(m.name)] || [],
     thread: { userId, username, friends, needLogin, showToast },
     onFavorite: (meal) => onToggleFavorite(canteenId, meal.name),
     needLogin,
     canteenId,
     date,
+    today,
     compact,
   });
 
@@ -531,9 +590,9 @@ export default function TodayTab({
               <span style={{ display: "block", fontSize: 16, fontWeight: 800, lineHeight: 1.3, marginTop: 2 }}>{winner.name}</span>
             </span>
             <span style={{ textAlign: "right", flexShrink: 0 }}>
-              <span style={{ display: "block", fontSize: 20, fontWeight: 800 }}>{formatAvg(stats[winner.name].avg_stars)} <span style={{ color: C.gold }}>★</span></span>
+              <span style={{ display: "block", fontSize: 20, fontWeight: 800 }}>{formatAvg(winnerTotal.avg_stars)} <span style={{ color: C.gold }}>★</span></span>
               <span style={{ fontSize: 12, color: C.muted }}>
-                {stats[winner.name].votes} {stats[winner.name].votes === 1 ? "Stimme" : "Stimmen"}
+                {winnerTotal.votes} {winnerTotal.votes === 1 ? "Stimme" : "Stimmen"}
               </span>
             </span>
           </button>

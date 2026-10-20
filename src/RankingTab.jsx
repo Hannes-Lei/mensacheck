@@ -20,6 +20,12 @@ const PERIODS = [
 
 const MEDALS = ["🥇", "🥈", "🥉"];
 
+// kleines Schild mit der Mensa, in der das Gericht bewertet wurde
+const mensaTag = {
+  display: "inline-block", padding: "1px 8px", borderRadius: 10, fontSize: 11, fontWeight: 700,
+  background: C.hintBg, color: C.hintText, whiteSpace: "nowrap",
+};
+
 export default function RankingTab({ canteens, canteenId, active }) {
   const [period, setPeriod] = useState("week");
   const [scope, setScope] = useState("all"); // "all" oder Mensa-Nummer
@@ -103,9 +109,9 @@ export default function RankingTab({ canteens, canteenId, active }) {
             <div style={styles.rankNo}>{mode === "top" && i < 3 ? MEDALS[i] : i + 1}</div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={styles.rankName}>{r.meal_name}</div>
-              <div style={styles.rankMeta}>
-                {scope === "all" ? `${canteenName(r.canteen_id)} · ` : ""}
-                zuletzt {formatDate(r.last_served)}
+              <div style={{ ...styles.rankMeta, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
+                <span style={mensaTag}>📍 {canteenName(r.canteen_id)}</span>
+                <span>zuletzt {formatDate(r.last_served)}</span>
               </div>
             </div>
             <div style={styles.rankScore}>

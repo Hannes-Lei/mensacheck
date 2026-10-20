@@ -192,7 +192,7 @@ export function Interactions({ rating, userId, username, needLogin, showToast })
 }
 
 // Ein Kommentar als Sprechblase mit Reaktionen und Antworten (Ansicht "Heute")
-export function CommentItem({ item, userId, username, friends, needLogin, showToast }) {
+export function CommentItem({ item, userId, username, friends, needLogin, showToast, dayNote }) {
   const isMe = item.user_id === userId;
   const isFriend = !isMe && friends?.has(item.user_id);
   const name = isMe ? "Du" : item.profiles?.username || "Jemand";
@@ -203,7 +203,7 @@ export function CommentItem({ item, userId, username, friends, needLogin, showTo
           <Avatar name={item.profiles?.username || "?"} size={22} />
           <strong>{isFriend ? `👥 ${name}` : name}</strong>
           <StarLine value={item.stars} size={13} />
-          <span style={{ color: C.faint, fontSize: 12 }}>{formatStars(item.stars)} · {timeAgo(item.created_at)}</span>
+          <span style={{ color: C.faint, fontSize: 12 }}>{formatStars(item.stars)} · {dayNote || timeAgo(item.created_at)}</span>
         </div>
         <p style={{ margin: "4px 0 0", lineHeight: 1.4 }}>{item.comment}</p>
       </div>

@@ -156,6 +156,7 @@ export default function FriendsTab({
   const [selected, setSelected] = useState("all"); // "all" oder Gruppen-ID
   const [showForms, setShowForms] = useState(false);
   const [feed, setFeed] = useState(null);
+  const [feedError, setFeedError] = useState(false);
 
   // Gibt es die gewählte Gruppe noch? (z.B. nach dem Verlassen)
   useEffect(() => {
@@ -175,14 +176,17 @@ export default function FriendsTab({
 
   const loadFeed = useCallback(async () => {
     if (!userId || feedUserIds.length === 0) { setFeed([]); return; }
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("ratings")
       .select(THREAD_SELECT)
       .in("user_id", feedUserIds)
       .gte("meal_date", daysAgo(FEED_DAYS - 1))
       .order("created_at", { ascending: false })
       .limit(80);
-    setFeed(data || []);
+    if (error) console.warn("Feed:", error.message);
+    setFeedError(!!error);
+    if (!error) setFeed(data || []);
+    else setFeed((f) => f || []);
   }, [userId, feedUserIds]);
 
   useEffect(() => { if (active) loadFeed(); }, [active, loadFeed]);
@@ -296,7 +300,13 @@ export default function FriendsTab({
 
         {feed === null && <div style={styles.notice}>Wird geladen…</div>}
 
-        {feed?.length === 0 && (
+        {feedError && (
+          <div style={{ ...styles.notice, ...styles.noticeError }}>
+            Die Bewertungen deiner Gruppe konnten gerade nicht geladen werden. Versuch es gleich noch einmal.
+          </div>
+        )}
+
+        {feed?.length === 0 && !feedError && (
           <div style={styles.empty}>
             Hier erscheint, was ihr gegessen habt.<br />
             Bewerte dein nächstes Mensa-Essen bei „Heute" – deine Gruppe sieht es dann sofort. 🍽️

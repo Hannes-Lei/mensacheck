@@ -15,7 +15,9 @@ export const EMOJIS = ["👍", "❤️", "😂", "😋", "🤢", "😮"];
 // Diese Felder holen wir mit jeder Bewertung zusammen aus der Datenbank
 export const THREAD_SELECT =
   "id, user_id, canteen_id, meal_date, meal_name, stars, comment, created_at, " +
-  "profiles(username), " +
+  // "!user_id": den Namen über ratings.user_id holen. Ohne den Zusatz weiß
+  // Supabase nicht, welcher Weg gemeint ist (es gäbe auch den über reactions).
+  "profiles!user_id(username), " +
   "reactions(emoji, user_id, profiles(username)), " +
   "replies(id, body, created_at, user_id, profiles(username))";
 

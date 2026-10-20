@@ -25,11 +25,16 @@ function CommentList({ canteenId, date, mealName, refreshKey, ...thread }) {
       .neq("comment", "")
       .order("created_at", { ascending: false })
       .limit(50)
-      .then(({ data }) => !cancelled && setItems(data || []));
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) console.warn("Kommentare:", error.message);
+        setItems(error ? "fehler" : data || []);
+      });
     return () => { cancelled = true; };
   }, [canteenId, mealName, refreshKey]);
 
   if (items === null) return <p style={styles.mutedText}>Kommentare werden geladen…</p>;
+  if (items === "fehler") return <p style={styles.mutedText}>Kommentare konnten nicht geladen werden.</p>;
   if (items.length === 0) return <p style={styles.mutedText}>Noch keine Kommentare.</p>;
 
   return (

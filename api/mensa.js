@@ -150,6 +150,31 @@ function cleanDays(days) {
   });
 }
 
+// Datum in deutscher Zeit, verschoben um "offset" Tage, als "2026-10-20"
+function berlinDate(offset = 0) {
+  const today = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Berlin" }).format(new Date());
+  const d = new Date(today + "T12:00:00Z");
+  d.setUTCDate(d.getUTCDate() + offset);
+  return d.toISOString().slice(0, 10);
+}
+
+// Der letzte Mensatag vor heute (zum Nachbewerten): Di–Fr = gestern,
+// Sa/So/Mo = Freitag. Gibt es dafür nichts, eben keinen.
+async function fetchPreviousDay(canteenId) {
+  const weekday = new Date(berlinDate(0) + "T12:00:00Z").getUTCDay(); // 0 = So
+  const date = berlinDate(weekday === 1 ? -3 : weekday === 0 ? -2 : -1);
+  try {
+    const r = await fetch(`https://openmensa.org/api/v2/canteens/${canteenId}/days/${date}/meals`, {
+      headers: { Accept: "application/json" },
+    });
+    if (!r.ok) return null; // 404 = an dem Tag geschlossen
+    const meals = await r.json();
+    return Array.isArray(meals) && meals.length > 0 ? { date, closed: false, meals } : null;
+  } catch {
+    return null;
+  }
+}
+
 export default async function handler(req, res) {
   const canteenId = Number(req.query?.canteen);
 
@@ -167,6 +192,7 @@ export default async function handler(req, res) {
 
   try {
     const url = `https://openmensa.org/api/v2/canteens/${canteen.id}/meals`;
+    const previousReq = fetchPreviousDay(canteen.id); // läuft parallel
     const response = await fetch(url, { headers: { Accept: "application/json" } });
 
     if (response.status === 404) {
@@ -176,7 +202,9 @@ export default async function handler(req, res) {
       throw new Error(`OpenMensa antwortet mit Status ${response.status}`);
     }
 
-    const days = cleanDays(await response.json());
+    const upcoming = await response.json();
+    const previous = await previousReq;
+    const days = cleanDays(previous ? [previous, ...upcoming] : upcoming);
 
     // 15 Minuten zwischenspeichern, damit wir OpenMensa nicht überlasten.
     res.setHeader("Cache-Control", "s-maxage=900, stale-while-revalidate=3600");

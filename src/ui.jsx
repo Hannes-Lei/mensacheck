@@ -200,6 +200,7 @@ export const globalCss = `
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); transition: background .2s; }
   input, textarea, select, button { font-family: inherit; }
+  .hscroll::-webkit-scrollbar { display: none; }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 `;
 

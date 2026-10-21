@@ -83,6 +83,14 @@ function ScoreBar({ total, day, date, today, compact }) {
   );
 }
 
+const friendRow = {
+  display: "flex", alignItems: "center", gap: 6, marginTop: 8, overflowX: "auto",
+  scrollbarWidth: "none", WebkitOverflowScrolling: "touch", maxWidth: "100%",
+};
+const friendChip = {
+  flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 10px",
+  borderRadius: 14, background: C.commentBg, fontSize: 13, color: C.soft, whiteSpace: "nowrap",
+};
 const scoreBox = { display: "flex", alignItems: "center", gap: 10, marginTop: 10 };
 const scoreEmpty = { gap: 6, fontSize: 13, color: C.faint };
 
@@ -124,7 +132,7 @@ function MealCard({
   const commentCount = total?.comments || 0;
 
   return (
-    <article data-meal={m.name} style={{ ...styles.card, ...(compact ? styles.cardCompact : {}), scrollMarginTop: 200 }}>
+    <article data-meal={m.name} style={{ ...styles.card, ...(compact ? styles.cardCompact : {}), scrollMarginTop: 200, minWidth: 0 }}>
       <div style={styles.cardTop}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={styles.metaRow}>
@@ -167,13 +175,15 @@ function MealCard({
         <Stars value={mine?.stars || 0} onRate={handleRate} size={compact ? 24 : 28} disabled={isFuture} />
       </div>
 
+      {/* Freunde als Leiste zum seitlichen Wischen, egal wie viele es sind */}
       {friendRatings.length > 0 && (
-        <div style={{ fontSize: 13, color: C.soft, marginTop: 6, lineHeight: 1.5 }}>
-          👥{" "}
-          {friendRatings.map((f, i) => (
-            <span key={f.name} style={{ whiteSpace: "nowrap" }}>
-              {i > 0 && " · "}<strong>{f.name}</strong> <span style={{ color: C.gold }}>★</span> {formatStars(f.stars)}
-              {f.date !== date && <span style={{ color: C.faint, fontSize: 12 }}> ({shortDate(f.date)})</span>}
+        <div className="hscroll" style={friendRow} aria-label="Bewertungen deiner Freunde">
+          <span style={{ flexShrink: 0, fontSize: 14 }}>👥</span>
+          {friendRatings.map((f) => (
+            <span key={f.name} style={friendChip}>
+              <strong style={{ color: C.text }}>{f.name}</strong>
+              <span style={{ color: C.gold }}>★</span>{formatStars(f.stars)}
+              {f.date !== date && <span style={{ color: C.faint, fontSize: 11 }}>{shortDate(f.date)}</span>}
             </span>
           ))}
         </div>

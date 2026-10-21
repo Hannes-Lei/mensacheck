@@ -536,6 +536,19 @@ export default function TodayTab({
     if (!active || !row || !chip || row.offsetWidth === 0) return; // unsichtbar -> später
     row.scrollLeft = chip.getBoundingClientRect().left - row.getBoundingClientRect().left + row.scrollLeft;
   }, [days, anchor, active]);
+
+  // Nach jeder Tagesauswahl wieder die Startansicht: "Heute" ganz links,
+  // der letzte Mensatag verschwindet nach links. Nur wenn man genau den
+  // letzten Mensatag antippt, bleibt er sichtbar.
+  useEffect(() => {
+    const row = dayRowRef.current;
+    const chip = row?.querySelector(`[data-day="${anchor}"]`);
+    if (!active || !row || !chip || !date || date < anchor) return;
+    const target = chip.getBoundingClientRect().left - row.getBoundingClientRect().left + row.scrollLeft;
+    // nur zurückschieben, wenn "Gestern" gerade sichtbar ist – ein weiter
+    // rechts gewählter Tag bleibt so im Bild
+    if (row.scrollLeft < target - 2) row.scrollTo({ left: target, behavior: "smooth" });
+  }, [date]); // eslint-disable-line react-hooks/exhaustive-deps
   const dayChipLabel = (d) => (d === daysAgo(1) ? `Gestern · ${shortDate(d)}` : dayLabel(d, today));
   const dayLoading = loading;
 

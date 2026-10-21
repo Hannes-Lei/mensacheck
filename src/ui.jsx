@@ -64,9 +64,10 @@ function StarIcon({ fill, size }) {
 
 const fillFor = (value, i) => Math.max(0, Math.min(1, value - i));
 
-// Sterne zum Bewerten in halben Schritten (0,5 bis 5).
-// Tippen auf die linke Hälfte eines Sterns = halber Stern.
-// Mit dem Finger seitlich über die Sterne wischen geht auch.
+// Sterne zum Bewerten in Viertel-Schritten (0,25 bis 5).
+// Wo man auf den Stern tippt, so viel wird er gefüllt (¼, ½, ¾, ganz).
+// Am genauesten: mit dem Finger seitlich wischen, die Zahl daneben
+// zeigt den Wert, losgelassen wird gespeichert.
 export function Stars({ value, onRate, size = 28, disabled = false }) {
   const ref = useRef(null);
   const dragging = useRef(false);
@@ -75,7 +76,7 @@ export function Stars({ value, onRate, size = 28, disabled = false }) {
   function valueAt(clientX) {
     const r = ref.current.getBoundingClientRect();
     const x = Math.min(Math.max(clientX - r.left, 0), r.width - 0.01);
-    return Math.max(0.5, Math.ceil((x / r.width) * 10) / 2);
+    return Math.max(0.25, Math.ceil((x / r.width) * 20) / 4);
   }
 
   const shown = preview ?? value ?? 0;
@@ -87,7 +88,7 @@ export function Stars({ value, onRate, size = 28, disabled = false }) {
         role="slider"
         tabIndex={disabled ? -1 : 0}
         aria-label="Deine Bewertung"
-        aria-valuemin={0.5}
+        aria-valuemin={0.25}
         aria-valuemax={5}
         aria-valuenow={value || 0}
         aria-valuetext={value ? `${formatStars(value)} von 5 Sternen` : "Noch nicht bewertet"}
@@ -113,10 +114,10 @@ export function Stars({ value, onRate, size = 28, disabled = false }) {
         onPointerLeave={() => { if (!dragging.current) setPreview(null); }}
         onKeyDown={(e) => {
           if (disabled) return;
-          const step = e.key === "ArrowRight" || e.key === "ArrowUp" ? 0.5 : e.key === "ArrowLeft" || e.key === "ArrowDown" ? -0.5 : 0;
+          const step = e.key === "ArrowRight" || e.key === "ArrowUp" ? 0.25 : e.key === "ArrowLeft" || e.key === "ArrowDown" ? -0.25 : 0;
           if (!step) return;
           e.preventDefault();
-          onRate(Math.min(5, Math.max(0.5, (value || 0) + step)));
+          onRate(Math.min(5, Math.max(0.25, (value || 0) + step)));
         }}
         style={{
           display: "inline-flex", gap: 3, padding: "4px 0",
@@ -128,20 +129,21 @@ export function Stars({ value, onRate, size = 28, disabled = false }) {
         {[0, 1, 2, 3, 4].map((i) => <StarIcon key={i} fill={fillFor(shown, i)} size={size} />)}
       </div>
       {preview != null && (
-        <span style={{ fontSize: 15, fontWeight: 800, color: C.gold, minWidth: 26 }}>{formatStars(preview)}</span>
+        <span style={{ fontSize: 15, fontWeight: 800, color: C.gold, minWidth: 34 }}>{formatStars(preview)}</span>
       )}
     </div>
   );
 }
 
-// Zahl mit Komma: 4.5 -> "4,5"
+// Zahl mit Komma: 4.5 -> "4,5", 4.25 -> "4,25", 4 -> "4,0"
 export function formatStars(v) {
-  return Number(v).toFixed(1).replace(".", ",");
+  const n = Number(v);
+  return n.toFixed(Number.isInteger(n * 2) ? 1 : 2).replace(".", ",");
 }
 
-// Nur-Anzeige, z.B. Durchschnitt 3,7 -> 3½ Sterne (auf halbe Sterne gerundet)
+// Nur-Anzeige, z.B. Durchschnitt 3,7 -> 3¾ Sterne (auf Viertel gerundet)
 export function StarLine({ value, size = 14 }) {
-  const v = Math.round(Number(value) * 2) / 2;
+  const v = Math.round(Number(value) * 4) / 4;
   return (
     <span
       style={{ display: "inline-flex", gap: 1, verticalAlign: "middle" }}
@@ -173,9 +175,9 @@ export function Avatar({ name = "?", size = 32 }) {
   );
 }
 
-export function Chip({ active, onClick, children }) {
+export function Chip({ active, onClick, children, ...rest }) {
   return (
-    <button type="button" onClick={onClick} style={{ ...styles.chip, ...(active ? styles.chipOn : {}) }}>
+    <button type="button" {...rest} onClick={onClick} style={{ ...styles.chip, ...(active ? styles.chipOn : {}) }}>
       {children}
     </button>
   );

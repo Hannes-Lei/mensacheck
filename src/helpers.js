@@ -14,13 +14,32 @@ export function daysAgo(n) {
   return d.toISOString().slice(0, 10);
 }
 
+// Samstag oder Sonntag? (dann gibt es keinen Mensatag)
+export function isWeekend(iso) {
+  const wd = new Date(iso + "T12:00:00Z").getUTCDay();
+  return wd === 0 || wd === 6;
+}
+
+// Letzter Mensatag vor "today": Di–Fr = gestern, Sa/So/Mo = Freitag.
+// Muss zu last_mensa_day() in Supabase (Skript 06) passen.
+export function lastMensaDay(today) {
+  const d = new Date(today + "T12:00:00Z");
+  const wd = d.getUTCDay(); // 0 = So, 1 = Mo, … 6 = Sa
+  d.setUTCDate(d.getUTCDate() - (wd === 1 ? 3 : wd === 0 ? 2 : 1));
+  return d.toISOString().slice(0, 10);
+}
+
 export function formatPrice(p) {
   if (p == null) return null;
   return Number(p).toFixed(2).replace(".", ",") + " €";
 }
 
+// Durchschnitt mit einer Nachkommastelle (3,8). Glatte Viertel wie 4,25
+// oder 3,75 bleiben genau, damit eine einzelne 4,25 nicht als 4,3 erscheint.
 export function formatAvg(n) {
-  return Number(n).toFixed(1).replace(".", ",");
+  const v = Number(n);
+  const quarter = Number.isInteger(v * 4) && !Number.isInteger(v * 2);
+  return v.toFixed(quarter ? 2 : 1).replace(".", ",");
 }
 
 export function formatDate(iso) {

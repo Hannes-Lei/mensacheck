@@ -10,7 +10,8 @@ import { Chip, StarLine, styles, C } from "./ui.jsx";
 // So viele Stimmen braucht ein Gericht, um in der Liste aufzutauchen.
 // Für den kleinen Freundestest reicht 2, später eher 3 bis 5.
 const MIN_VOTES = 2;
-const SHOW = 20;
+const SHOW = 25;      // so viele Gerichte zuerst
+const SHOW_MORE = 50; // nach „Weitere anzeigen"
 
 const PERIODS = [
   { id: "week", label: "Diese Woche", since: () => daysAgo(6) },
@@ -32,6 +33,10 @@ export default function RankingTab({ canteens, canteenId, active }) {
   const [mode, setMode] = useState("top"); // top | flop
   const [rows, setRows] = useState(null);
   const [error, setError] = useState(null);
+  const [showAll, setShowAll] = useState(false);
+
+  // Bei anderer Auswahl wieder mit den ersten 25 anfangen
+  useEffect(() => { setShowAll(false); }, [period, scope, mode]);
 
   useEffect(() => {
     if (!active) return;
@@ -60,8 +65,9 @@ export default function RankingTab({ canteens, canteenId, active }) {
         ? b.avg_stars - a.avg_stars || b.votes - a.votes
         : a.avg_stars - b.avg_stars || b.votes - a.votes
     );
-    return sorted.slice(0, SHOW);
+    return sorted.slice(0, SHOW_MORE);
   }, [rows, mode]);
+  const visible = showAll ? list : list.slice(0, SHOW);
 
   const canteenName = (id) => canteens.find((c) => c.id === id)?.name || `Mensa ${id}`;
 
@@ -104,7 +110,7 @@ export default function RankingTab({ canteens, canteenId, active }) {
           </div>
         )}
 
-        {list.map((r, i) => (
+        {visible.map((r, i) => (
           <div key={`${r.canteen_id}|${r.meal_name}`} style={styles.rankRow}>
             <div style={styles.rankNo}>{mode === "top" && i < 3 ? MEDALS[i] : i + 1}</div>
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -121,6 +127,12 @@ export default function RankingTab({ canteens, canteenId, active }) {
             </div>
           </div>
         ))}
+
+        {!showAll && list.length > SHOW && (
+          <button type="button" style={styles.extrasToggle} onClick={() => setShowAll(true)}>
+            ▾ Weitere anzeigen (bis Platz {Math.min(list.length, SHOW_MORE)})
+          </button>
+        )}
 
         {list.length > 0 && (
           <p style={{ ...styles.mutedText, textAlign: "center" }}>

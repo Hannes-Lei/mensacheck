@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "./supabase.js";
 import {
-  todayBerlin, formatPrice, formatAvg, dayLabel, friendlyError, dishKey, dishName, shortDate, isPastaExtra,
+  todayBerlin, daysAgo, isWeekend, lastMensaDay, formatPrice, formatAvg, dayLabel, friendlyError, dishKey, dishName, shortDate, isPastaExtra,
 } from "./helpers.js";
 import { Stars, Chip, DietBadge, formatStars, styles, C } from "./ui.jsx";
 import { CommentItem, THREAD_SELECT } from "./Interactions.jsx";
@@ -57,7 +57,7 @@ function RatingSummary({ total, day, date, today }) {
   }
   let sub = null;
   if (day?.votes > 0 && day.votes < total.votes) {
-    sub = `${date === today ? "heute" : "an dem Tag"} ${formatAvg(day.avg_stars)} · ${votes(day.votes)}`;
+    sub = `${date === today ? "heute" : date === daysAgo(1) ? "gestern" : "an dem Tag"} ${formatAvg(day.avg_stars)} · ${votes(day.votes)}`;
   } else if (!(day?.votes > 0) && total.last_date) {
     sub = `zuletzt am ${shortDate(total.last_date)}`;
   }
@@ -252,6 +252,18 @@ function byTotal(A, B) {
   return (b.votes >= 2) - (a.votes >= 2) || b.avg_stars - a.avg_stars || b.votes - a.votes;
 }
 
+// Letzter Mensatag aus den gemerkten Gerichten (falls OpenMensa den Tag
+// nicht mehr liefert)
+async function archivedPastDay(canteenId, date) {
+  const { data } = await supabase
+    .from("menu_items")
+    .select("meal_date")
+    .eq("canteen_id", canteenId)
+    .eq("meal_date", date)
+    .limit(1);
+  return data?.length ? { date, closed: false, meals: [] } : null;
+}
+
 function matchesDiet(m, dietFilter) {
   if (dietFilter === "vegan") return m.diet === "vegan";
   if (dietFilter === "vegetarisch") return m.diet === "vegan" || m.diet === "vegetarisch";
@@ -265,8 +277,9 @@ export default function TodayTab({
 }) {
   const today = todayBerlin();
 
-  const [days, setDays] = useState([]);           // kommende Tage laut OpenMensa
+  const [days, setDays] = useState([]);           // letzter Mensatag + kommende Tage
   const [date, setDate] = useState(null);
+  const [anchor, setAnchor] = useState(null);     // dieser Tag steht nach dem Laden ganz links
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -292,12 +305,24 @@ export default function TodayTab({
         if (!r.ok) throw new Error(data.error || "Fehler beim Laden.");
         return data;
       })
-      .then((data) => {
+      .then(async (data) => {
         if (cancelled) return;
-        const upcoming = (data.days || []).filter((d) => d.date >= today && !d.closed && d.meals.length > 0);
-        setDays(upcoming);
-        setDate(upcoming.some((d) => d.date === today) ? today : upcoming[0]?.date || null);
+        // Samstag und Sonntag gibt es als Tage nicht
+        const open = (data.days || []).filter((d) => !d.closed && d.meals.length > 0 && !isWeekend(d.date));
+        const upcoming = open.filter((d) => d.date >= today).sort((a, b) => (a.date < b.date ? -1 : 1));
         rememberToday(canteenId, upcoming.find((d) => d.date === today));
+        // Letzter Mensatag vor heute ("gestern", am Wochenende/Montag der
+        // Freitag) – nur der darf noch bewertet werden
+        const prevDate = lastMensaDay(today);
+        const past = open.find((d) => d.date === prevDate) || (await archivedPastDay(canteenId, prevDate));
+        if (cancelled) return;
+        // Ausgewählt: heute. Am Wochenende weiterhin der Freitag.
+        const start = upcoming.some((d) => d.date === today) ? today
+          : isWeekend(today) && past ? past.date
+          : upcoming[0]?.date || past?.date || null;
+        setDays(past ? [past, ...upcoming] : upcoming);
+        setDate(start);
+        setAnchor(start);
       })
       .catch((e) => !cancelled && setError(e.message))
       .finally(() => !cancelled && setLoading(false));
@@ -443,11 +468,12 @@ export default function TodayTab({
   async function share(meal) {
     const s = totalOf(meal.name);
     const mensa = canteens.find((c) => c.id === canteenId)?.name || "Mensa";
-    const when = date === today ? "Heute" : `Am ${dayLabel(date, today).replace(" · ", ", ")}`;
+    const when = date === today ? "Heute" : date === daysAgo(1) ? "Gestern"
+      : `Am ${dayLabel(date, today).replace(" · ", ", ")}`;
     const rating = s?.votes > 0
       ? ` ⭐ ${formatAvg(s.avg_stars)} (${s.votes} ${s.votes === 1 ? "Stimme" : "Stimmen"})`
       : meal.price != null ? ` für ${formatPrice(meal.price)}` : "";
-    const text = `${when} in der ${mensa}: ${meal.name}${rating}. Kommt wer mit? 🍽️`;
+    const text = `${when} in der ${mensa}: ${meal.name}${rating}.${date >= today ? " Kommt wer mit? 🍽️" : ""}`;
     const url = window.location.origin;
 
     if (navigator.share) {
@@ -465,6 +491,19 @@ export default function TodayTab({
   // 4) Was wird angezeigt?
   const currentDay = days.find((d) => d.date === date);
   const isFuture = date > today;
+  const isPast = !!date && date < today;
+
+  // Tag-Auswahl so scrollen, dass "Heute" ganz links steht. Der letzte
+  // Mensatag (zum Nachbewerten) liegt links daneben und erscheint erst,
+  // wenn man die Leiste in die andere Richtung wischt.
+  const dayRowRef = useRef(null);
+  useLayoutEffect(() => {
+    const row = dayRowRef.current;
+    const chip = row?.querySelector(`[data-day="${anchor}"]`);
+    if (!row || !chip) return;
+    row.scrollLeft = chip.getBoundingClientRect().left - row.getBoundingClientRect().left + row.scrollLeft;
+  }, [days, anchor]);
+  const dayChipLabel = (d) => (d === daysAgo(1) ? `Gestern · ${shortDate(d)}` : dayLabel(d, today));
   const dayLoading = loading;
 
   const { mains, extras, favToday } = useMemo(() => {
@@ -551,12 +590,14 @@ export default function TodayTab({
         </select>
 
         {days.length > 0 && (
-          <div style={styles.chipRow}>
+          <div style={styles.chipRow} ref={dayRowRef}>
             {days.map((d) => (
-              <Chip key={d.date} active={d.date === date} onClick={() => setDate(d.date)}>
-                {dayLabel(d.date, today)}
+              <Chip key={d.date} data-day={d.date} active={d.date === date} onClick={() => setDate(d.date)}>
+                {dayChipLabel(d.date)}
               </Chip>
             ))}
+            {/* Platz am Ende, damit "Heute" auch bei wenigen Tagen ganz links stehen kann */}
+            {days[0]?.date !== anchor && <span aria-hidden="true" style={{ flex: "0 0 100%" }} />}
           </div>
         )}
 
@@ -578,10 +619,17 @@ export default function TodayTab({
           </button>
         )}
 
+        {isPast && !dayLoading && (
+          <div style={styles.favBanner}>
+            📅 <strong>Nachbewerten:</strong> Hier kannst du noch bewerten, was du{" "}
+            {date === daysAgo(1) ? "gestern" : `am ${dayLabel(date, today).replace(" · ", ", ")}`} gegessen hast.
+          </div>
+        )}
+
         {favToday.length > 0 && !dayLoading && (
           <div style={styles.favBanner}>
             ❤️ <strong>
-              {date === today ? "Heute gibt's" : "An diesem Tag gibt's"} dein Lieblingsgericht:
+              {date === today ? "Heute gibt's" : isPast ? "An diesem Tag gab's" : "An diesem Tag gibt's"} dein Lieblingsgericht:
             </strong>{" "}
             {favToday.map((m) => m.name).join(", ")}
           </div>
@@ -591,7 +639,7 @@ export default function TodayTab({
           <button type="button" style={styles.winner} onClick={() => jumpTo(winner.name)}>
             <span style={{ fontSize: 30, lineHeight: 1 }}>🏆</span>
             <span style={{ flex: 1, minWidth: 0 }}>
-              <span style={styles.winnerLabel}>{date === today ? "Heute vorn" : "An diesem Tag vorn"}</span>
+              <span style={styles.winnerLabel}>{date === today ? "Heute vorn" : date === daysAgo(1) ? "Gestern vorn" : "An diesem Tag vorn"}</span>
               <span style={{ display: "block", fontSize: 16, fontWeight: 800, lineHeight: 1.3, marginTop: 2 }}>{winner.name}</span>
             </span>
             <span style={{ textAlign: "right", flexShrink: 0 }}>

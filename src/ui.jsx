@@ -1,4 +1,5 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
+import { avatarUrl } from "./supabase.js";
 
 // ============================================================================
 // Gemeinsame Bausteine und das Aussehen (Farben, Abstände) der ganzen App
@@ -157,9 +158,20 @@ export function StarLine({ value, size = 14 }) {
 
 // Rundes Bild mit Anfangsbuchstaben, Farbe passend zum Namen
 const AVATAR_COLORS = ["#EE6A24", "#22408F", "#3C6E47", "#B5651D", "#7B4FA0", "#C0392B", "#16808A"];
-export function Avatar({ name = "?", size = 32 }) {
+export function Avatar({ name = "?", size = 32, path = null }) {
+  const [broken, setBroken] = useState(false);
+  useEffect(() => setBroken(false), [path]);
   let h = 0;
   for (const ch of name) h = (h * 31 + ch.codePointAt(0)) >>> 0;
+  const url = !broken && avatarUrl(path);
+  if (url) {
+    return (
+      <img
+        src={url} alt="" aria-hidden="true" loading="lazy" onError={() => setBroken(true)}
+        style={{ width: size, height: size, borderRadius: "50%", flexShrink: 0, objectFit: "cover", background: C.track }}
+      />
+    );
+  }
   return (
     <span
       aria-hidden="true"

@@ -107,7 +107,7 @@ function GroupInfo({ group, members, userId, onLeft, showToast }) {
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
         {members.map((m) => (
           <span key={m.user_id} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 13 }}>
-            <Avatar name={m.username} size={22} /> {m.user_id === userId ? "Du" : m.username}
+            <Avatar name={m.username} path={m.avatar_path} size={22} /> {m.user_id === userId ? "Du" : m.username}
           </span>
         ))}
       </div>
@@ -131,7 +131,7 @@ function FeedItem({ item, canteenName, ...thread }) {
   return (
     <article style={styles.card}>
       <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-        <Avatar name={name} size={34} />
+        <Avatar name={name} path={item.profiles?.avatar_path} size={34} />
         <div style={{ flex: 1, minWidth: 0, fontSize: 14, lineHeight: 1.35 }}>
           <strong>{isMe ? "Du" : name}</strong>
           <div style={{ color: C.muted, fontSize: 12 }}>{canteenName} · {timeAgo(item.created_at)}</div>

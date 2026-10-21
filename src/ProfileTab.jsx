@@ -1,7 +1,89 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { supabase } from "./supabase.js";
-import { BADGES, computeStats, dishKey, formatAvg, formatDate } from "./helpers.js";
-import { StarLine, Chip, styles, C } from "./ui.jsx";
+import { BADGES, computeStats, dishKey, formatAvg, formatDate, friendlyError } from "./helpers.js";
+import { StarLine, Chip, Avatar, styles, C } from "./ui.jsx";
+import Moderation from "./Moderation.jsx";
+
+// Foto quadratisch zuschneiden und klein rechnen (256 × 256 Pixel, JPG).
+// So bleibt jedes Profilbild nur ca. 20–40 KB groß.
+async function toSquareJpeg(file, size = 256) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image();
+    img.src = url;
+    await img.decode();
+    const s = Math.min(img.naturalWidth, img.naturalHeight);
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = size;
+    canvas.getContext("2d").drawImage(
+      img, (img.naturalWidth - s) / 2, (img.naturalHeight - s) / 2, s, s, 0, 0, size, size
+    );
+    return await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85));
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+// Profilbild wählen (aus der Fotogalerie) oder entfernen
+function AvatarPicker({ userId, username, avatarPath, onAvatarChange, showToast }) {
+  const input = useRef(null);
+  const [busy, setBusy] = useState(false);
+
+  async function pick(e) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // dasselbe Bild später nochmal wählbar
+    if (!file) return;
+    setBusy(true);
+    try {
+      const blob = await toSquareJpeg(file);
+      if (!blob) throw new Error("Das Bild konnte nicht gelesen werden.");
+      const path = `${userId}/${Date.now()}.jpg`;
+      const up = await supabase.storage.from("avatars")
+        .upload(path, blob, { contentType: "image/jpeg", cacheControl: "31536000", upsert: false });
+      if (up.error) throw up.error;
+      const { error } = await supabase.from("profiles").update({ avatar_path: path }).eq("id", userId);
+      if (error) throw error;
+      if (avatarPath) supabase.storage.from("avatars").remove([avatarPath]); // altes Bild weg
+      onAvatarChange(path);
+      showToast("Profilbild gespeichert.");
+    } catch (err) {
+      showToast(err?.message?.includes("decode") ? "Dieses Bildformat geht leider nicht." : friendlyError(err));
+    }
+    setBusy(false);
+  }
+
+  async function remove() {
+    setBusy(true);
+    const { error } = await supabase.from("profiles").update({ avatar_path: null }).eq("id", userId);
+    if (error) showToast(friendlyError(error));
+    else {
+      supabase.storage.from("avatars").remove([avatarPath]);
+      onAvatarChange(null);
+    }
+    setBusy(false);
+  }
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+      <button
+        type="button" onClick={() => input.current?.click()} disabled={busy}
+        aria-label="Profilbild wählen"
+        style={{ padding: 0, border: "none", background: "none", cursor: "pointer", borderRadius: "50%", opacity: busy ? 0.5 : 1 }}
+      >
+        <Avatar name={username || "?"} path={avatarPath} size={64} />
+      </button>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 2 }}>
+        <button type="button" style={styles.smallAction} onClick={() => input.current?.click()} disabled={busy}>
+          {busy ? "Wird gespeichert…" : avatarPath ? "📷 Profilbild ändern" : "📷 Profilbild wählen"}
+        </button>
+        {avatarPath && !busy && (
+          <button type="button" style={{ ...styles.smallAction, color: C.muted }} onClick={remove}>Entfernen</button>
+        )}
+      </div>
+      <input ref={input} type="file" accept="image/*" onChange={pick} style={{ display: "none" }} />
+    </div>
+  );
+}
 
 // Auswahl hell / dunkel
 function DesignPicker({ theme, onThemeChange }) {
@@ -21,7 +103,7 @@ function DesignPicker({ theme, onThemeChange }) {
 // ============================================================================
 export default function ProfileTab({
   userId, username, canteens, favoritesList, onToggleFavorite, needLogin, onSignOut,
-  theme, onThemeChange, active,
+  theme, onThemeChange, active, avatarPath = null, onAvatarChange = () => {}, showToast = () => {},
 }) {
   const [ratings, setRatings] = useState(null);
   const [dishAvg, setDishAvg] = useState({});
@@ -89,6 +171,11 @@ export default function ProfileTab({
         <h2 style={styles.h2}>Hallo {username || ""} 👋</h2>
         <button type="button" style={styles.userBtn} onClick={onSignOut}>Abmelden</button>
       </div>
+
+      <AvatarPicker
+        userId={userId} username={username} avatarPath={avatarPath}
+        onAvatarChange={onAvatarChange} showToast={showToast}
+      />
 
       {/* Zahlen */}
       <div style={styles.statGrid}>
@@ -182,6 +269,8 @@ export default function ProfileTab({
       )}
 
       <DesignPicker theme={theme} onThemeChange={onThemeChange} />
+
+      <Moderation active={active} userId={userId} showToast={showToast} />
     </main>
   );
 }

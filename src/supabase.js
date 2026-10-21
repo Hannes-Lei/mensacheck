@@ -12,3 +12,8 @@ const SUPABASE_URL = "https://onfkgaeupwbxqvowtwgx.supabase.co";
 const SUPABASE_KEY = "sb_publishable_yyVMmnrnCxpJN_DkXPmrbA_Y4X1Ah6I";
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// Öffentliche Adresse eines Profilbilds (gespeichert ist nur der Pfad)
+export function avatarUrl(path) {
+  return path ? supabase.storage.from("avatars").getPublicUrl(path).data.publicUrl : null;
+}

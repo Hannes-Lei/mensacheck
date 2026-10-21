@@ -17,7 +17,7 @@ export const THREAD_SELECT =
   "id, user_id, canteen_id, meal_date, meal_name, stars, comment, created_at, " +
   // "!user_id": den Namen über ratings.user_id holen. Ohne den Zusatz weiß
   // Supabase nicht, welcher Weg gemeint ist (es gäbe auch den über reactions).
-  "profiles!user_id(username), " +
+  "profiles!user_id(username, avatar_path), " +
   "reactions(emoji, user_id, profiles(username)), " +
   "replies(id, body, created_at, user_id, profiles(username))";
 
@@ -202,7 +202,7 @@ export function CommentItem({ item, userId, username, friends, needLogin, showTo
     <li style={{ listStyle: "none" }}>
       <div style={styles.comment}>
         <div style={{ ...styles.commentHead, alignItems: "center" }}>
-          <Avatar name={item.profiles?.username || "?"} size={22} />
+          <Avatar name={item.profiles?.username || "?"} path={item.profiles?.avatar_path} size={22} />
           <strong>{isFriend ? `👥 ${name}` : name}</strong>
           <StarLine value={item.stars} size={13} />
           <span style={{ color: C.faint, fontSize: 12 }}>{formatStars(item.stars)} · {dayNote || timeAgo(item.created_at)}</span>

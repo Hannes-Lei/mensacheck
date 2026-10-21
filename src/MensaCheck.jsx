@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "./supabase.js";
 import { dishKey, friendlyError, BADGES, computeStats } from "./helpers.js";
-import { styles, globalCss, C } from "./ui.jsx";
+import { styles, globalCss, C, Avatar } from "./ui.jsx";
 import AuthSheet from "./AuthSheet.jsx";
 import TodayTab from "./TodayTab.jsx";
 import RankingTab from "./RankingTab.jsx";
@@ -46,6 +46,7 @@ export default function MensaCheck() {
 
   const [session, setSession] = useState(null);
   const [username, setUsername] = useState(null);
+  const [avatarPath, setAvatarPath] = useState(null); // eigenes Profilbild
   const [showAuth, setShowAuth] = useState(false);
   const [favoritesList, setFavoritesList] = useState([]);
   const [toast, setToast] = useState(null);
@@ -90,11 +91,12 @@ export default function MensaCheck() {
   useEffect(() => {
     if (!userId) {
       setUsername(null);
+      setAvatarPath(null);
       setFavoritesList([]);
       return;
     }
-    supabase.from("profiles").select("username").eq("id", userId).single()
-      .then(({ data }) => setUsername(data?.username || null));
+    supabase.from("profiles").select("username, avatar_path").eq("id", userId).single()
+      .then(({ data }) => { setUsername(data?.username || null); setAvatarPath(data?.avatar_path || null); });
     supabase.from("favorites").select("canteen_id, meal_name, created_at")
       .eq("user_id", userId).order("created_at", { ascending: false })
       .then(({ data }) => setFavoritesList(data || []));
@@ -105,15 +107,21 @@ export default function MensaCheck() {
     if (!userId) { setGroups([]); setMembers([]); setGroupsLoaded(false); return; }
     const [{ data: g }, { data: m }] = await Promise.all([
       supabase.from("groups").select("id, name, code, created_by, created_at").order("created_at"),
-      supabase.from("group_members").select("group_id, user_id, joined_at, profiles(username)").order("joined_at"),
+      supabase.from("group_members").select("group_id, user_id, joined_at, profiles(username, avatar_path)").order("joined_at"),
     ]);
     setGroups(g || []);
-    setMembers((m || []).map((r) => ({ group_id: r.group_id, user_id: r.user_id, username: r.profiles?.username || "Jemand" })));
+    setMembers((m || []).map((r) => ({
+      group_id: r.group_id, user_id: r.user_id,
+      username: r.profiles?.username || "Jemand", avatar_path: r.profiles?.avatar_path || null,
+    })));
     setGroupsLoaded(true);
   }, [userId]);
 
   useEffect(() => { reloadGroups(); }, [reloadGroups]);
   useEffect(() => { if (tab === "friends") reloadGroups(); }, [tab, reloadGroups]);
+
+  // Profilbilder der Gruppenmitglieder: user_id -> Pfad
+  const avatars = useMemo(() => new Map(members.map((m) => [m.user_id, m.avatar_path])), [members]);
 
   // Alle Leute aus meinen Gruppen (ohne mich): user_id -> Name
   const friends = useMemo(() => {
@@ -252,7 +260,9 @@ export default function MensaCheck() {
             <span style={styles.city}>Leipzig</span>
           </div>
           {userId ? (
-            <button type="button" style={styles.userBtn} onClick={() => setTab("me")}>👤 {username || "…"}</button>
+            <button type="button" style={{ ...styles.userBtn, display: "inline-flex", alignItems: "center", gap: 6 }} onClick={() => setTab("me")}>
+              {avatarPath ? <Avatar name={username || "?"} path={avatarPath} size={20} /> : "👤"} {username || "…"}
+            </button>
           ) : (
             <button type="button" style={styles.loginBtn} onClick={() => setShowAuth(true)}>Anmelden</button>
           )}
@@ -269,6 +279,7 @@ export default function MensaCheck() {
           userId={userId}
           username={username}
           friends={friends}
+          avatars={avatars}
           favorites={favorites}
           onToggleFavorite={toggleFavorite}
           needLogin={() => setShowAuth(true)}
@@ -305,6 +316,9 @@ export default function MensaCheck() {
           theme={theme}
           onThemeChange={setTheme}
           active={tab === "me"}
+          avatarPath={avatarPath}
+          onAvatarChange={(p) => { setAvatarPath(p); reloadGroups(); }}
+          showToast={showToast}
         />
       </div>
 

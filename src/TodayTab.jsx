@@ -3,7 +3,7 @@ import { supabase } from "./supabase.js";
 import {
   todayBerlin, daysAgo, isWeekend, lastMensaDay, formatPrice, formatAvg, dayLabel, friendlyError, dishKey, dishName, shortDate, isPastaExtra,
 } from "./helpers.js";
-import { Stars, StarLine, Chip, DietBadge, formatStars, styles, C } from "./ui.jsx";
+import { Stars, StarLine, Chip, DietBadge, Avatar, formatStars, styles, C } from "./ui.jsx";
 import { CommentItem, THREAD_SELECT } from "./Interactions.jsx";
 
 // ============================================================================
@@ -88,7 +88,7 @@ const friendRow = {
   scrollbarWidth: "none", WebkitOverflowScrolling: "touch", maxWidth: "100%",
 };
 const friendChip = {
-  flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 10px",
+  flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 10px 3px 4px",
   borderRadius: 14, background: C.commentBg, fontSize: 13, color: C.soft, whiteSpace: "nowrap",
 };
 const scoreBox = { display: "flex", alignItems: "center", gap: 10, marginTop: 10 };
@@ -181,6 +181,7 @@ function MealCard({
           <span style={{ flexShrink: 0, fontSize: 14 }}>👥</span>
           {friendRatings.map((f) => (
             <span key={f.name} style={friendChip}>
+              <Avatar name={f.name} path={f.avatar} size={18} />
               <strong style={{ color: C.text }}>{f.name}</strong>
               <span style={{ color: C.gold }}>★</span>{formatStars(f.stars)}
               {f.date !== date && <span style={{ color: C.faint, fontSize: 11 }}>{shortDate(f.date)}</span>}
@@ -302,7 +303,7 @@ function matchesDiet(m, dietFilter) {
 
 // ---- Die Ansicht -----------------------------------------------------------
 export default function TodayTab({
-  canteens, canteenId, onCanteenChange, userId, username, friends, favorites, onToggleFavorite,
+  canteens, canteenId, onCanteenChange, userId, username, friends, avatars, favorites, onToggleFavorite,
   needLogin, showToast, onActivity = () => {}, active = true,
 }) {
   const today = todayBerlin();
@@ -435,10 +436,12 @@ export default function TodayTab({
     for (const r of friendHistory) {          // ist nach Datum absteigend sortiert
       if (!friends?.has(r.user_id) || seen.has(r.dish + "|" + r.user_id)) continue;
       seen.add(r.dish + "|" + r.user_id);
-      (out[r.dish] ||= []).push({ name: friends.get(r.user_id), stars: r.stars, date: r.meal_date });
+      (out[r.dish] ||= []).push({
+        name: friends.get(r.user_id), avatar: avatars?.get(r.user_id), stars: r.stars, date: r.meal_date,
+      });
     }
     return out;
-  }, [friendHistory, friends]);
+  }, [friendHistory, friends, avatars]);
 
   const totalOf = (name) => totals[dishName(name)];
   useEffect(() => { loadRatings(); }, [loadRatings]);

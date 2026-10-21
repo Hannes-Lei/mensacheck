@@ -274,6 +274,7 @@ export default function MensaCheck() {
           needLogin={() => setShowAuth(true)}
           showToast={showToast}
           onActivity={() => checkBadges(false)}
+          active={tab === "today"}
         />
       </div>
       <div style={{ display: tab === "friends" ? "block" : "none" }}>

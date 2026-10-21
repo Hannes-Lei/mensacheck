@@ -3,7 +3,7 @@ import { supabase } from "./supabase.js";
 import {
   todayBerlin, daysAgo, isWeekend, lastMensaDay, formatPrice, formatAvg, dayLabel, friendlyError, dishKey, dishName, shortDate, isPastaExtra,
 } from "./helpers.js";
-import { Stars, Chip, DietBadge, formatStars, styles, C } from "./ui.jsx";
+import { Stars, StarLine, Chip, DietBadge, formatStars, styles, C } from "./ui.jsx";
 import { CommentItem, THREAD_SELECT } from "./Interactions.jsx";
 
 // ============================================================================
@@ -49,26 +49,42 @@ function CommentList({ canteenId, date, mealName, refreshKey, ...thread }) {
   );
 }
 
-// Rechts neben den Sternen: Gesamtbewertung, darunter klein der Tag
-function RatingSummary({ total, day, date, today }) {
+// Bewertung der anderen, gut sichtbar: große Zahl, Sterne, Anzahl Stimmen,
+// darunter klein der Tag ("heute 4,5 · 3 Stimmen" bzw. "zuletzt am 13.10.")
+function ScoreBar({ total, day, date, today, compact }) {
   const votes = (n) => `${n} ${n === 1 ? "Stimme" : "Stimmen"}`;
   if (!total?.votes) {
-    return <div style={{ fontSize: 14, color: C.faint, textAlign: "right" }}>Noch keine Bewertung</div>;
+    return (
+      <div style={{ ...scoreBox, ...scoreEmpty }}>
+        <span style={{ fontSize: 15 }}>☆</span>
+        <span>Noch keine Bewertung</span>
+      </div>
+    );
   }
   let sub = null;
   if (day?.votes > 0 && day.votes < total.votes) {
     sub = `${date === today ? "heute" : date === daysAgo(1) ? "gestern" : "an dem Tag"} ${formatAvg(day.avg_stars)} · ${votes(day.votes)}`;
   } else if (!(day?.votes > 0) && total.last_date) {
-    sub = `zuletzt am ${shortDate(total.last_date)}`;
+    sub = `zuletzt gegessen am ${shortDate(total.last_date)}`;
   }
   return (
-    <div style={{ fontSize: 14, textAlign: "right", lineHeight: 1.3 }}>
-      <strong>{formatAvg(total.avg_stars)}</strong>
-      <span style={{ color: C.muted }}> · {votes(total.votes)}</span>
-      {sub && <div style={{ fontSize: 12, color: C.faint }}>{sub}</div>}
+    <div style={scoreBox} aria-label={`Bewertung ${formatAvg(total.avg_stars)} von 5, ${votes(total.votes)}`}>
+      <span style={{ fontSize: compact ? 19 : 22, fontWeight: 800, lineHeight: 1, color: C.text }}>
+        {formatAvg(total.avg_stars)}
+      </span>
+      <span style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <StarLine value={total.avg_stars} size={compact ? 13 : 15} />
+          <span style={{ fontSize: 13, fontWeight: 700, color: C.soft }}>{votes(total.votes)}</span>
+        </span>
+        {sub && <span style={{ fontSize: 12, color: C.muted }}>{sub}</span>}
+      </span>
     </div>
   );
 }
+
+const scoreBox = { display: "flex", alignItems: "center", gap: 10, marginTop: 10 };
+const scoreEmpty = { gap: 6, fontSize: 13, color: C.faint };
 
 // ---- Karte für ein Gericht -------------------------------------------------
 function MealCard({
@@ -142,9 +158,13 @@ function MealCard({
         </button>
       )}
 
+      <ScoreBar total={total} day={stats} date={date} today={today} compact={compact} />
+
       <div style={styles.rateRow}>
+        <span style={{ fontSize: 13, fontWeight: 700, color: C.muted }}>
+          {isFuture ? "Bewerten ab dem Tag" : mine?.stars ? "Deine Bewertung" : "Wie war's?"}
+        </span>
         <Stars value={mine?.stars || 0} onRate={handleRate} size={compact ? 24 : 28} disabled={isFuture} />
-        <RatingSummary total={total} day={stats} date={date} today={today} />
       </div>
 
       {friendRatings.length > 0 && (
@@ -273,7 +293,7 @@ function matchesDiet(m, dietFilter) {
 // ---- Die Ansicht -----------------------------------------------------------
 export default function TodayTab({
   canteens, canteenId, onCanteenChange, userId, username, friends, favorites, onToggleFavorite,
-  needLogin, showToast, onActivity = () => {},
+  needLogin, showToast, onActivity = () => {}, active = true,
 }) {
   const today = todayBerlin();
 
@@ -500,9 +520,9 @@ export default function TodayTab({
   useLayoutEffect(() => {
     const row = dayRowRef.current;
     const chip = row?.querySelector(`[data-day="${anchor}"]`);
-    if (!row || !chip) return;
+    if (!active || !row || !chip || row.offsetWidth === 0) return; // unsichtbar -> später
     row.scrollLeft = chip.getBoundingClientRect().left - row.getBoundingClientRect().left + row.scrollLeft;
-  }, [days, anchor]);
+  }, [days, anchor, active]);
   const dayChipLabel = (d) => (d === daysAgo(1) ? `Gestern · ${shortDate(d)}` : dayLabel(d, today));
   const dayLoading = loading;
 

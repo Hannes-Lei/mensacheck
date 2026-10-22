@@ -133,11 +133,21 @@ function SeatMap({ layout, labels, mineAt, selected, onPick }) {
   );
 }
 
-// ---- Das Fenster mit der Karte ---------------------------------------------
-export function SeatSheet({ onClose, userId, checkins, names, canteens, reload, showToast }) {
-  const canteenId = SEAT_CANTEENS[0]; // vorerst nur Mensa am Elsterbecken
+// ---- Das Fenster: Mensa wählen, Karte oder "Ich bin hier" -------------------
+// Welche Mensa zuerst? 1. wo ich selbst eingecheckt bin, 2. wo zuletzt jemand
+// aus meinen Gruppen eingecheckt hat, 3. die Mensa, die bei "Heute" gewählt ist.
+function startCanteen(checkins, userId, homeCanteen) {
+  const live = checkins.filter(active);
+  const mine = live.find((c) => c.user_id === userId);
+  if (mine) return mine.canteen_id;
+  const latest = live.filter((c) => c.user_id !== userId).sort((a, b) => (a.created_at < b.created_at ? 1 : -1))[0];
+  return latest?.canteen_id ?? homeCanteen ?? SEAT_CANTEENS[0];
+}
+
+export function SeatSheet({ onClose, userId, checkins, names, canteens, homeCanteen, reload, showToast }) {
+  const [canteenId, setCanteenId] = useState(() => startCanteen(checkins, userId, homeCanteen));
   const layout = seatLayout(canteenId);
-  const canteenName = canteens.find((c) => c.id === canteenId)?.name || "Mensa am Elsterbecken";
+  const canteenName = canteens.find((c) => c.id === canteenId)?.name || "Mensa";
   const [selected, setSelected] = useState(null);
   const [busy, setBusy] = useState(false);
   const [, tick] = useState(0);
@@ -148,20 +158,24 @@ export function SeatSheet({ onClose, userId, checkins, names, canteens, reload, 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
+  useEffect(() => setSelected(null), [canteenId]);
 
-  const here = checkins.filter((c) => active(c) && c.canteen_id === canteenId);
-  const mine = here.find((c) => c.user_id === userId);
-  const friends = here.filter((c) => c.user_id !== userId).sort((a, b) => (a.created_at < b.created_at ? -1 : 1));
+  const live = checkins.filter(active);
+  const myAnywhere = live.find((c) => c.user_id === userId);
+  const mine = myAnywhere?.canteen_id === canteenId ? myAnywhere : null;
+  const friends = live.filter((c) => c.user_id !== userId && c.canteen_id === canteenId)
+    .sort((a, b) => (a.created_at < b.created_at ? -1 : 1));
+  const countIn = (id) => live.filter((c) => c.user_id !== userId && c.canteen_id === id).length;
   const labels = useMemo(() => {
     const out = {};
-    for (const c of friends) (out[c.table_id] ||= []).push(names.get(c.user_id) || "Jemand");
+    for (const c of friends) if (c.table_id) (out[c.table_id] ||= []).push(names.get(c.user_id) || "Jemand");
     for (const k in out) out[k] = joinNames(out[k]);
     return out;
   }, [friends, names]);
 
-  async function checkIn() {
+  async function checkIn(tableId) {
     setBusy(true);
-    const { error } = await supabase.rpc("check_in", { p_canteen: canteenId, p_table: selected });
+    const { error } = await supabase.rpc("check_in", { p_canteen: canteenId, p_table: tableId });
     setBusy(false);
     if (error) return showToast(friendlyError(error));
     setSelected(null);
@@ -178,6 +192,9 @@ export function SeatSheet({ onClose, userId, checkins, names, canteens, reload, 
   }
 
   const pick = (id) => setSelected((s) => (s === id || mine?.table_id === id ? null : id));
+  const elsewhere = myAnywhere && !mine
+    ? canteens.find((c) => c.id === myAnywhere.canteen_id)?.name || "einer anderen Mensa"
+    : null;
 
   return (
     <div style={{ ...styles.overlay, alignItems: "stretch" }} onClick={onClose}>
@@ -189,11 +206,29 @@ export function SeatSheet({ onClose, userId, checkins, names, canteens, reload, 
           <button type="button" onClick={onClose} aria-label="Schließen" style={{ border: "none", background: "none", fontSize: 24, color: C.muted, cursor: "pointer", padding: "4px 8px" }}>✕</button>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 20, fontWeight: 800 }}>🪑 Wo sitzt ihr?</div>
-            <div style={{ fontSize: 13, color: C.muted }}>{canteenName} · sehen nur deine Gruppen</div>
+            <div style={{ fontSize: 13, color: C.muted }}>sehen nur deine Gruppen · 60 Min.</div>
           </div>
         </div>
 
-        <SeatMap layout={layout} labels={labels} mineAt={mine?.table_id} selected={selected} onPick={pick} />
+        <select
+          aria-label="Mensa wählen" value={canteenId} onChange={(e) => setCanteenId(Number(e.target.value))}
+          style={{ ...styles.select, fontWeight: 700 }}
+        >
+          {canteens.map((c) => {
+            const n = countIn(c.id);
+            return <option key={c.id} value={c.id}>{c.name}{n ? ` · 👥 ${n}` : ""}</option>;
+          })}
+        </select>
+
+        {layout ? (
+          <SeatMap layout={layout} labels={labels} mineAt={mine?.table_id} selected={selected} onPick={pick} />
+        ) : (
+          <div style={{ ...styles.empty, padding: "18px 12px" }}>
+            <div style={{ fontSize: 34, marginBottom: 6 }}>🍽️</div>
+            Für diese Mensa gibt's noch keinen Grundriss.<br />
+            Du kannst trotzdem zeigen, dass du hier bist.
+          </div>
+        )}
 
         {friends.length > 0 ? (
           <div style={{ fontSize: 13, color: C.soft, textAlign: "center" }}>
@@ -204,26 +239,36 @@ export function SeatSheet({ onClose, userId, checkins, names, canteens, reload, 
             ))}
           </div>
         ) : (
-          <div style={{ fontSize: 13, color: C.faint, textAlign: "center" }}>Gerade sitzt niemand aus deinen Gruppen hier.</div>
+          <div style={{ fontSize: 13, color: C.faint, textAlign: "center" }}>Gerade ist niemand aus deinen Gruppen hier.</div>
         )}
 
         <div style={{ marginTop: "auto", display: "flex", flexDirection: "column", gap: 8, paddingTop: 6 }}>
-          {selected ? (
+          {elsewhere && !selected && (
+            <div style={{ fontSize: 12, color: C.faint, textAlign: "center" }}>Du bist gerade in der {elsewhere} eingecheckt.</div>
+          )}
+          {layout && selected ? (
             <>
-              <button type="button" style={styles.primaryBtn} onClick={checkIn} disabled={busy}>
-                {busy ? "Einen Moment…" : mine ? "Hierhin wechseln" : "Ich sitze hier"}
+              <button type="button" style={styles.primaryBtn} onClick={() => checkIn(selected)} disabled={busy}>
+                {busy ? "Einen Moment…" : myAnywhere ? "Hierhin wechseln" : "Ich sitze hier"}
               </button>
               <div style={{ fontSize: 12, color: C.faint, textAlign: "center" }}>Sehen nur deine Gruppen · verschwindet nach 60 Min.</div>
             </>
           ) : mine ? (
             <>
               <div style={{ ...styles.hint, cursor: "default", textAlign: "center" }}>
-                ✓ Deine Gruppen sehen, wo du sitzt · noch {minutesLeft(mine.expires_at)} Min.
+                ✓ Deine Gruppen sehen, {mine.table_id ? "wo du sitzt" : "dass du hier bist"} · noch {minutesLeft(mine.expires_at)} Min.
               </div>
               <button type="button" style={styles.ghostBtn} onClick={checkOut} disabled={busy}>Bin weg</button>
             </>
-          ) : (
+          ) : layout ? (
             <div style={{ fontSize: 14, color: C.muted, textAlign: "center", padding: 8 }}>Tippe auf deinen Tisch</div>
+          ) : (
+            <>
+              <button type="button" style={styles.primaryBtn} onClick={() => checkIn(null)} disabled={busy}>
+                {busy ? "Einen Moment…" : myAnywhere ? "Ich bin jetzt hier" : "Ich bin hier"}
+              </button>
+              <div style={{ fontSize: 12, color: C.faint, textAlign: "center" }}>Sehen nur deine Gruppen · verschwindet nach 60 Min.</div>
+            </>
           )}
         </div>
       </div>
@@ -240,7 +285,7 @@ export function SeatRow({ members, userId, checkins, onOpen }) {
   const me = here.some((c) => c.user_id === userId);
 
   let title = "Sitzplatz teilen", sub = "gerade niemand da";
-  if (others.length) { title = "Wo sitzt ihr?"; sub = `${joinNames(others)} ${others.length === 1 ? "ist" : "sind"} da${me ? " · du auch" : ""}`; }
+  if (others.length) { title = "Wo sitzt ihr?"; sub = `${joinNames(others)} ${others.length === 1 ? "ist" : "sind"} in der Mensa${me ? " · du auch" : ""}`; }
   else if (me) { title = "Wo sitzt ihr?"; sub = "du bist eingecheckt"; }
 
   return (
@@ -267,7 +312,8 @@ export function SeatNotice({ checkins, userId, names, canteens, onOpen }) {
     .sort((a, b) => (a.created_at < b.created_at ? -1 : 1));
   if (friends.length === 0) return null;
   const who = joinNames(friends.map((c) => names.get(c.user_id) || "Jemand"));
-  const mensa = canteens.find((c) => c.id === friends[0].canteen_id)?.name || "der Mensa";
+  const same = friends.every((c) => c.canteen_id === friends[0].canteen_id);
+  const mensa = same ? canteens.find((c) => c.id === friends[0].canteen_id)?.name || "Mensa" : null;
   return (
     <button
       type="button" onClick={onOpen}
@@ -276,7 +322,7 @@ export function SeatNotice({ checkins, userId, names, canteens, onOpen }) {
     >
       <span>🪑</span>
       <span style={{ flex: 1 }}>
-        <strong>{who}</strong> {friends.length === 1 ? `sitzt seit ${clock(friends[0].created_at)}` : "sitzen gerade"} in der {mensa}
+        <strong>{who}</strong> {friends.length === 1 ? `ist seit ${clock(friends[0].created_at)}` : "sind gerade"} {mensa ? `in der ${mensa}` : "in der Mensa"}
       </span>
       <strong style={{ color: C.green, whiteSpace: "nowrap" }}>ansehen ›</strong>
     </button>

@@ -338,6 +338,7 @@ export default function MensaCheck() {
           noTextLimit={noTextLimit}
           checkins={checkins}
           reloadSeats={reloadSeats}
+          homeCanteen={canteenId}
         />
       </div>
       <div style={{ display: tab === "ranking" ? "block" : "none" }}>

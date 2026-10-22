@@ -156,7 +156,7 @@ function FeedItem({ item, canteenName, ...thread }) {
 
 export default function FriendsTab({
   userId, username, groups, members, reloadGroups, canteens, needLogin, showToast, active, noTextLimit = false,
-  checkins = [], reloadSeats = () => {},
+  checkins = [], reloadSeats = () => {}, homeCanteen = null,
 }) {
   const [selected, setSelected] = useState("all"); // "all" oder Gruppen-ID
   const [showForms, setShowForms] = useState(false);
@@ -321,7 +321,7 @@ export default function FriendsTab({
         {seatsOpen && (
           <SeatSheet
             onClose={() => setSeatsOpen(false)} userId={userId} checkins={checkins} names={names}
-            canteens={canteens} reload={reloadSeats} showToast={showToast}
+            canteens={canteens} homeCanteen={homeCanteen} reload={reloadSeats} showToast={showToast}
           />
         )}
 

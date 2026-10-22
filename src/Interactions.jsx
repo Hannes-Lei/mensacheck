@@ -10,6 +10,28 @@ import { StarLine, formatStars, Avatar, styles, C } from "./ui.jsx";
 // Pro Person gibt es ein Emoji pro Bewertung – wie bei WhatsApp.
 // ============================================================================
 
+// Langer Text wird gekürzt angezeigt, mit "mehr anzeigen" zum Aufklappen
+const SHORT = 280;
+export function LongText({ text, before = "", after = "" }) {
+  const [open, setOpen] = useState(false);
+  if (!text || text.length <= SHORT + 40 || open) {
+    return <>{before}{text}{after}</>;
+  }
+  const cut = text.slice(0, SHORT);
+  const short = cut.slice(0, Math.max(cut.lastIndexOf(" "), SHORT - 40)).trimEnd();
+  return (
+    <>
+      {before}{short}…{" "}
+      <button
+        type="button" onClick={() => setOpen(true)}
+        style={{ padding: 0, border: "none", background: "none", color: C.green, fontWeight: 600, fontSize: "inherit", cursor: "pointer" }}
+      >
+        mehr anzeigen
+      </button>
+    </>
+  );
+}
+
 export const EMOJIS = ["👍", "❤️", "😂", "😋", "🤢", "😮"];
 
 // Diese Felder holen wir mit jeder Bewertung zusammen aus der Datenbank
@@ -23,7 +45,7 @@ export const THREAD_SELECT =
 
 const REPLIES_SHOWN = 3;
 
-export function Interactions({ rating, userId, username, needLogin, showToast }) {
+export function Interactions({ rating, userId, username, needLogin, showToast, noTextLimit = false }) {
   const [reactions, setReactions] = useState(rating.reactions || []);
   const [replies, setReplies] = useState(rating.replies || []);
   const [picker, setPicker] = useState(false);
@@ -162,7 +184,7 @@ export function Interactions({ rating, userId, username, needLogin, showToast })
           {visibleReplies.map((r) => (
             <div key={r.id} style={{ fontSize: 14, lineHeight: 1.4 }}>
               <strong>{r.user_id === userId ? "Du" : r.profiles?.username || "Jemand"}</strong>{" "}
-              <span>{r.body}</span>{" "}
+              <span style={{ whiteSpace: "pre-wrap" }}><LongText text={r.body} /></span>{" "}
               <span style={{ color: C.faint, fontSize: 12, whiteSpace: "nowrap" }}>· {timeAgo(r.created_at)}</span>
               {r.user_id === userId && (
                 <button type="button" onClick={() => removeReply(r)} style={ist.tinyLink} aria-label="Antwort löschen">
@@ -180,7 +202,7 @@ export function Interactions({ rating, userId, username, needLogin, showToast })
           style={{ display: "flex", gap: 6, marginTop: 8 }}
         >
           <input
-            value={draft} onChange={(e) => setDraft(e.target.value)} maxLength={300} autoFocus
+            value={draft} onChange={(e) => setDraft(e.target.value)} maxLength={noTextLimit ? undefined : 1000} autoFocus
             placeholder="Antwort schreiben …" aria-label="Antwort"
             style={{ ...styles.input, padding: "8px 10px", fontSize: 15 }}
           />
@@ -194,7 +216,7 @@ export function Interactions({ rating, userId, username, needLogin, showToast })
 }
 
 // Ein Kommentar als Sprechblase mit Reaktionen und Antworten (Ansicht "Heute")
-export function CommentItem({ item, userId, username, friends, needLogin, showToast, dayNote }) {
+export function CommentItem({ item, userId, username, friends, needLogin, showToast, dayNote, noTextLimit }) {
   const isMe = item.user_id === userId;
   const isFriend = !isMe && friends?.has(item.user_id);
   const name = isMe ? "Du" : item.profiles?.username || "Jemand";
@@ -207,9 +229,9 @@ export function CommentItem({ item, userId, username, friends, needLogin, showTo
           <StarLine value={item.stars} size={13} />
           <span style={{ color: C.faint, fontSize: 12 }}>{formatStars(item.stars)} · {dayNote || timeAgo(item.created_at)}</span>
         </div>
-        <p style={{ margin: "4px 0 0", lineHeight: 1.4 }}>{item.comment}</p>
+        <p style={{ margin: "4px 0 0", lineHeight: 1.4, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}><LongText text={item.comment} /></p>
       </div>
-      <Interactions rating={item} userId={userId} username={username} needLogin={needLogin} showToast={showToast} />
+      <Interactions rating={item} userId={userId} username={username} needLogin={needLogin} showToast={showToast} noTextLimit={noTextLimit} />
     </li>
   );
 }

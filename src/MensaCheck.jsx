@@ -47,6 +47,7 @@ export default function MensaCheck() {
   const [session, setSession] = useState(null);
   const [username, setUsername] = useState(null);
   const [avatarPath, setAvatarPath] = useState(null); // eigenes Profilbild
+  const [noTextLimit, setNoTextLimit] = useState(false); // Konto ohne Zeichen-Grenze?
   const [showAuth, setShowAuth] = useState(false);
   const [favoritesList, setFavoritesList] = useState([]);
   const [toast, setToast] = useState(null);
@@ -92,11 +93,13 @@ export default function MensaCheck() {
     if (!userId) {
       setUsername(null);
       setAvatarPath(null);
+      setNoTextLimit(false);
       setFavoritesList([]);
       return;
     }
     supabase.from("profiles").select("username, avatar_path").eq("id", userId).single()
       .then(({ data }) => { setUsername(data?.username || null); setAvatarPath(data?.avatar_path || null); });
+    supabase.rpc("has_no_text_limit").then(({ data }) => setNoTextLimit(data === true));
     supabase.from("favorites").select("canteen_id, meal_name, created_at")
       .eq("user_id", userId).order("created_at", { ascending: false })
       .then(({ data }) => setFavoritesList(data || []));
@@ -286,6 +289,7 @@ export default function MensaCheck() {
           showToast={showToast}
           onActivity={() => checkBadges(false)}
           active={tab === "today"}
+          noTextLimit={noTextLimit}
         />
       </div>
       <div style={{ display: tab === "friends" ? "block" : "none" }}>
@@ -299,6 +303,7 @@ export default function MensaCheck() {
           needLogin={() => setShowAuth(true)}
           showToast={showToast}
           active={tab === "friends"}
+          noTextLimit={noTextLimit}
         />
       </div>
       <div style={{ display: tab === "ranking" ? "block" : "none" }}>

@@ -220,7 +220,7 @@ function MealCard({
         <div style={{ marginTop: 10 }}>
           <textarea
             style={styles.textarea} value={draft} onChange={(e) => setDraft(e.target.value)}
-            maxLength={500} rows={3} placeholder="Wie war's? Portion, Geschmack, Preis-Leistung …" autoFocus
+            maxLength={thread?.noTextLimit ? undefined : 2000} rows={3} placeholder="Wie war's? Portion, Geschmack, Preis-Leistung …" autoFocus
           />
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 6 }}>
             <button type="button" style={styles.ghostBtn} onClick={() => setEditing(false)}>Abbrechen</button>
@@ -304,7 +304,7 @@ function matchesDiet(m, dietFilter) {
 // ---- Die Ansicht -----------------------------------------------------------
 export default function TodayTab({
   canteens, canteenId, onCanteenChange, userId, username, friends, avatars, favorites, onToggleFavorite,
-  needLogin, showToast, onActivity = () => {}, active = true,
+  needLogin, showToast, onActivity = () => {}, active = true, noTextLimit = false,
 }) {
   const today = todayBerlin();
 
@@ -613,7 +613,7 @@ export default function TodayTab({
     onRemove: removeRating,
     onShare: share,
     friendRatings: friendsByDish[dishName(m.name)] || [],
-    thread: { userId, username, friends, needLogin, showToast },
+    thread: { userId, username, friends, needLogin, showToast, noTextLimit },
     onFavorite: (meal) => onToggleFavorite(canteenId, meal.name),
     needLogin,
     canteenId,

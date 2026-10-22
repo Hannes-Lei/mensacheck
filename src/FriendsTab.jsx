@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "./supabase.js";
 import { daysAgo, todayBerlin, formatDate, timeAgo, friendlyError } from "./helpers.js";
 import { Chip, StarLine, Avatar, formatStars, styles, C } from "./ui.jsx";
-import { Interactions, THREAD_SELECT } from "./Interactions.jsx";
+import { Interactions, LongText, THREAD_SELECT } from "./Interactions.jsx";
 
 // ============================================================================
 // Ansicht "Freunde": Gruppen und was eure Leute gegessen haben
@@ -143,7 +143,9 @@ function FeedItem({ item, canteenName, ...thread }) {
         <strong style={{ fontSize: 14 }}>{formatStars(item.stars)}</strong>
       </div>
       {item.comment && (
-        <p style={{ ...styles.comment, margin: "10px 0 0", lineHeight: 1.45 }}>„{item.comment}"</p>
+        <p style={{ ...styles.comment, margin: "10px 0 0", lineHeight: 1.45, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+          <LongText text={item.comment} before="„" after={'"'} />
+        </p>
       )}
       <Interactions rating={item} {...thread} />
     </article>
@@ -151,7 +153,7 @@ function FeedItem({ item, canteenName, ...thread }) {
 }
 
 export default function FriendsTab({
-  userId, username, groups, members, reloadGroups, canteens, needLogin, showToast, active,
+  userId, username, groups, members, reloadGroups, canteens, needLogin, showToast, active, noTextLimit = false,
 }) {
   const [selected, setSelected] = useState("all"); // "all" oder Gruppen-ID
   const [showForms, setShowForms] = useState(false);
@@ -259,7 +261,7 @@ export default function FriendsTab({
 
   // ---- Mit Gruppe(n) ---------------------------------------------------------
   const group = groups.find((g) => g.id === selected);
-  const thread = { userId, username, needLogin, showToast };
+  const thread = { userId, username, needLogin, showToast, noTextLimit };
 
   return (
     <>

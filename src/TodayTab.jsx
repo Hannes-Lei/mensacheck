@@ -220,7 +220,7 @@ function MealCard({
         <div style={{ marginTop: 10 }}>
           <textarea
             style={styles.textarea} value={draft} onChange={(e) => setDraft(e.target.value)}
-            maxLength={thread?.noTextLimit ? undefined : 2000} rows={3} placeholder="Wie war's? Portion, Geschmack, Preis-Leistung …" autoFocus
+            maxLength={thread?.noTextLimit ? 25000 : 500} rows={3} placeholder="Wie war's? Portion, Geschmack, Preis-Leistung …" autoFocus
           />
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 6 }}>
             <button type="button" style={styles.ghostBtn} onClick={() => setEditing(false)}>Abbrechen</button>

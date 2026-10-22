@@ -202,7 +202,7 @@ export function Interactions({ rating, userId, username, needLogin, showToast, n
           style={{ display: "flex", gap: 6, marginTop: 8 }}
         >
           <input
-            value={draft} onChange={(e) => setDraft(e.target.value)} maxLength={noTextLimit ? undefined : 1000} autoFocus
+            value={draft} onChange={(e) => setDraft(e.target.value)} maxLength={noTextLimit ? 25000 : 500} autoFocus
             placeholder="Antwort schreiben …" aria-label="Antwort"
             style={{ ...styles.input, padding: "8px 10px", fontSize: 15 }}
           />

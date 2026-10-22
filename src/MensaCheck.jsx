@@ -123,6 +123,38 @@ export default function MensaCheck() {
   useEffect(() => { reloadGroups(); }, [reloadGroups]);
   useEffect(() => { if (tab === "friends") reloadGroups(); }, [tab, reloadGroups]);
 
+  // ---- Sitzplätze: wer aus meinen Gruppen sitzt gerade wo? ----------------
+  // (die Datenbank liefert nur eigene + Gruppen-Check-ins, die noch laufen)
+  const [checkins, setCheckins] = useState([]);
+  const hasGroups = groups.length > 0;
+  const reloadSeats = useCallback(async () => {
+    if (!userId || !hasGroups) { setCheckins([]); return; }
+    const { data, error } = await supabase.from("seat_checkins")
+      .select("user_id, canteen_id, table_id, created_at, expires_at");
+    if (!error) setCheckins(data || []);
+  }, [userId, hasGroups]);
+  useEffect(() => {
+    reloadSeats();
+    const t = setInterval(reloadSeats, 60000);
+    return () => clearInterval(t);
+  }, [reloadSeats]);
+  useEffect(() => { if (tab === "friends") reloadSeats(); }, [tab, reloadSeats]);
+
+  // Roter Punkt am Freunde-Symbol: jemand hat neu eingecheckt, seit ich
+  // zuletzt im Freunde-Tab war (gemerkt pro Gerät)
+  const SEEN_KEY = `mensacheck-sitz-gesehen-${userId}`;
+  const [seatSeen, setSeatSeen] = useState(0);
+  useEffect(() => {
+    try { setSeatSeen(Number(localStorage.getItem(SEEN_KEY)) || 0); } catch { setSeatSeen(0); }
+  }, [SEEN_KEY]);
+  const newSeat = checkins.some((c) => c.user_id !== userId && new Date(c.created_at).getTime() > seatSeen);
+  useEffect(() => {
+    if (tab !== "friends" || !newSeat) return;
+    const now = Date.now();
+    setSeatSeen(now);
+    try { localStorage.setItem(SEEN_KEY, String(now)); } catch { /* egal */ }
+  }, [tab, newSeat, SEEN_KEY]);
+
   // Profilbilder der Gruppenmitglieder: user_id -> Pfad
   const avatars = useMemo(() => new Map(members.map((m) => [m.user_id, m.avatar_path])), [members]);
 
@@ -304,6 +336,8 @@ export default function MensaCheck() {
           showToast={showToast}
           active={tab === "friends"}
           noTextLimit={noTextLimit}
+          checkins={checkins}
+          reloadSeats={reloadSeats}
         />
       </div>
       <div style={{ display: tab === "ranking" ? "block" : "none" }}>
@@ -341,7 +375,12 @@ export default function MensaCheck() {
               onClick={() => { setTab(t.id); window.scrollTo({ top: 0 }); }}
               aria-current={tab === t.id ? "page" : undefined}
             >
-              <span style={{ ...styles.navIcon, filter: tab === t.id ? "none" : "grayscale(1)" }}>{t.icon}</span>
+              <span style={{ position: "relative", display: "inline-block" }}>
+                <span style={{ ...styles.navIcon, filter: tab === t.id ? "none" : "grayscale(1)" }}>{t.icon}</span>
+                {t.id === "friends" && newSeat && tab !== "friends" && (
+                  <span aria-label="Neuer Sitzplatz" style={{ position: "absolute", top: -1, right: -6, width: 10, height: 10, borderRadius: "50%", background: "#D93025", border: `2px solid ${C.bg}` }} />
+                )}
+              </span>
               {t.label}
             </button>
           ))}

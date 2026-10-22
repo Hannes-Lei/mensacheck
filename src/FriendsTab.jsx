@@ -3,6 +3,7 @@ import { supabase } from "./supabase.js";
 import { daysAgo, todayBerlin, formatDate, timeAgo, friendlyError } from "./helpers.js";
 import { Chip, StarLine, Avatar, formatStars, styles, C } from "./ui.jsx";
 import { Interactions, LongText, THREAD_SELECT } from "./Interactions.jsx";
+import { SeatRow, SeatSheet, SeatNotice } from "./Seats.jsx";
 
 // ============================================================================
 // Ansicht "Freunde": Gruppen und was eure Leute gegessen haben
@@ -71,7 +72,7 @@ function GroupForms({ onCreated, onJoined, showToast }) {
 }
 
 // Infos zu einer Gruppe: Mitglieder, Code, Einladen, Verlassen
-function GroupInfo({ group, members, userId, onLeft, showToast }) {
+function GroupInfo({ group, members, userId, onLeft, showToast, seatRow }) {
   async function invite() {
     const url = `${window.location.origin}/?gruppe=${group.code}`;
     const text = `Komm in meine MensaCheck-Gruppe „${group.name}" 🍽️ Dann sehen wir, was wir in der Mensa gegessen haben.`;
@@ -111,6 +112,7 @@ function GroupInfo({ group, members, userId, onLeft, showToast }) {
           </span>
         ))}
       </div>
+      {seatRow}
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
         <button type="button" style={styles.smallPrimary} onClick={invite}>📨 Freunde einladen</button>
         <span style={{ fontSize: 13, color: C.muted }}>
@@ -154,10 +156,14 @@ function FeedItem({ item, canteenName, ...thread }) {
 
 export default function FriendsTab({
   userId, username, groups, members, reloadGroups, canteens, needLogin, showToast, active, noTextLimit = false,
+  checkins = [], reloadSeats = () => {},
 }) {
   const [selected, setSelected] = useState("all"); // "all" oder Gruppen-ID
   const [showForms, setShowForms] = useState(false);
   const [feed, setFeed] = useState(null);
+  const [seatsOpen, setSeatsOpen] = useState(false);
+  // Namen aller Leute aus meinen Gruppen (für die Sitzplatz-Karte)
+  const names = useMemo(() => new Map(members.map((m) => [m.user_id, m.username])), [members]);
   const [feedError, setFeedError] = useState(false);
 
   // Gibt es die gewählte Gruppe noch? (z.B. nach dem Verlassen)
@@ -290,13 +296,32 @@ export default function FriendsTab({
           />
         )}
 
-        {(group || groups.length === 1) && (
+        <SeatNotice checkins={checkins} userId={userId} names={names} canteens={canteens} onOpen={() => setSeatsOpen(true)} />
+
+        {(group || groups.length === 1) ? (
           <GroupInfo
             group={group || groups[0]}
             members={membersOf((group || groups[0]).id)}
             userId={userId}
             showToast={showToast}
             onLeft={reloadGroups}
+            seatRow={
+              <SeatRow
+                members={membersOf((group || groups[0]).id)} userId={userId} checkins={checkins}
+                onOpen={() => setSeatsOpen(true)}
+              />
+            }
+          />
+        ) : (
+          <div style={{ ...styles.card, paddingTop: 2 }}>
+            <SeatRow members={members} userId={userId} checkins={checkins} onOpen={() => setSeatsOpen(true)} />
+          </div>
+        )}
+
+        {seatsOpen && (
+          <SeatSheet
+            onClose={() => setSeatsOpen(false)} userId={userId} checkins={checkins} names={names}
+            canteens={canteens} reload={reloadSeats} showToast={showToast}
           />
         )}
 

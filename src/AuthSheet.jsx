@@ -11,6 +11,7 @@ export default function AuthSheet({ onClose, note }) {
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
@@ -68,13 +69,32 @@ export default function AuthSheet({ onClose, note }) {
             autoComplete="email" required
           />
         </label>
-        <label style={styles.field}>
-          <span style={styles.fieldLabel}>Passwort</span>
-          <input
-            style={styles.input} type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-            autoComplete={mode === "register" ? "new-password" : "current-password"} minLength={6} required
-          />
-        </label>
+        <div style={styles.field}>
+          <label htmlFor="auth-password" style={styles.fieldLabel}>Passwort</label>
+          <div style={{ position: "relative" }}>
+            <input
+              id="auth-password" style={{ ...styles.input, paddingRight: 48 }}
+              type={showPassword ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)}
+              autoComplete={mode === "register" ? "new-password" : "current-password"} minLength={6} required
+              autoCapitalize="none" autoCorrect="off" spellCheck={false}
+            />
+            <button
+              type="button" onClick={() => setShowPassword((v) => !v)}
+              aria-label={showPassword ? "Passwort verbergen" : "Passwort anzeigen"} aria-pressed={showPassword}
+              style={{
+                position: "absolute", right: 4, top: "50%", transform: "translateY(-50%)", width: 40, height: 40,
+                display: "flex", alignItems: "center", justifyContent: "center", border: "none", background: "none",
+                cursor: "pointer", color: C.muted, padding: 0,
+              }}
+            >
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" />
+                <circle cx="12" cy="12" r="3" />
+                {showPassword && <path d="M4 4l16 16" />}
+              </svg>
+            </button>
+          </div>
+        </div>
 
         {error && <div style={{ ...styles.notice, ...styles.noticeError, marginBottom: 12 }}>{error}</div>}
 

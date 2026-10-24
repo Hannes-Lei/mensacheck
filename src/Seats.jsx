@@ -26,26 +26,158 @@ export function joinNames(names) {
 }
 
 // ---- Der Grundriss ----------------------------------------------------------
+// Füllt den freien Platz im Fenster. Mit zwei Fingern (oder Strg + Mausrad)
+// wird nur der Plan vergrößert, mit einem Finger verschoben, Tippen wählt den
+// nächstgelegenen Tisch.
+const MAX_ZOOM = 3;
+
 function SeatMap({ layout, labels, mineAt, selected, onPick }) {
   const ref = useRef(null);
   const [vx, vy, vw, vh] = layout.viewBox.split(" ").map(Number);
+  const full = { x: vx, y: vy, w: vw, h: vh };
+  const [view, setView] = useState(full);
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  const gesture = useRef({ pointers: new Map(), moved: false });
+  const zoomed = view.w < vw - 0.5;
+  const onPickRef = useRef(onPick);
+  onPickRef.current = onPick;
 
-  // Tippen: der nächstgelegene Tisch zählt (auch knapp daneben)
-  function handleClick(e) {
-    const svg = ref.current;
-    const pt = svg.createSVGPoint();
-    pt.x = e.clientX; pt.y = e.clientY;
-    const p = pt.matrixTransform(svg.getScreenCTM().inverse());
-    let best = null, bestD = 80;
+  // Bildschirm-Punkt -> Plan-Koordinaten (Plan waagerecht mittig, oben bündig eingepasst)
+  function box() {
+    const r = ref.current.getBoundingClientRect();
+    const rw = Math.min(r.width, (r.height * vw) / vh);
+    return { left: r.left + (r.width - rw) / 2, top: r.top, rw }; // waagerecht mittig, oben bündig
+  }
+  function toPlan(cx, cy, v = viewRef.current) {
+    const b = box();
+    return { x: v.x + ((cx - b.left) / b.rw) * v.w, y: v.y + ((cy - b.top) / b.rw) * v.w };
+  }
+  function clamp(v) {
+    const w = Math.min(vw, Math.max(vw / MAX_ZOOM, v.w));
+    const h = (w * vh) / vw;
+    return {
+      w, h,
+      x: Math.min(vx + vw - w, Math.max(vx, v.x)),
+      y: Math.min(vy + vh - h, Math.max(vy, v.y)),
+    };
+  }
+  // Zoomen um einen festen Punkt (anchor bleibt unter dem Finger)
+  function zoomAt(anchor, cx, cy, newW) {
+    const b = box();
+    const w = Math.min(vw, Math.max(vw / MAX_ZOOM, newW));
+    setView(clamp({ w, x: anchor.x - ((cx - b.left) / b.rw) * w, y: anchor.y - ((cy - b.top) / b.rw) * w }));
+  }
+
+  function pickAt(cx, cy) {
+    const p = toPlan(cx, cy);
+    const reach = 80 * (viewRef.current.w / vw);
+    let best = null, bestD = reach;
     for (const t of layout.tables) {
       const dx = Math.max(t.x - p.x, 0, p.x - (t.x + t.w));
       const dy = Math.max(t.y - p.y, 0, p.y - (t.y + t.h));
       const d = Math.hypot(dx, dy);
       if (d < bestD) { best = t; bestD = d; }
     }
-    if (best) onPick(best.id);
+    if (best) onPickRef.current(best.id);
   }
 
+  // Gesten: gemeinsame Logik für Finger (Touch-Events) und Maus (Pointer-Events)
+  function down(id, x, y) {
+    const g = gesture.current;
+    g.pointers.set(id, { x, y });
+    if (g.pointers.size === 1) {
+      g.moved = false;
+      g.start = { x, y, view: viewRef.current };
+    } else if (g.pointers.size === 2) {
+      g.moved = true;
+      const [a, b] = [...g.pointers.values()];
+      g.pinch = { dist: Math.hypot(a.x - b.x, a.y - b.y) || 1, anchor: toPlan((a.x + b.x) / 2, (a.y + b.y) / 2), w: viewRef.current.w };
+    }
+  }
+  function move(id, x, y) {
+    const g = gesture.current;
+    if (!g.pointers.has(id)) return;
+    g.pointers.set(id, { x, y });
+    if (g.pointers.size >= 2 && g.pinch) {
+      const [a, b] = [...g.pointers.values()];
+      const dist = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+      zoomAt(g.pinch.anchor, (a.x + b.x) / 2, (a.y + b.y) / 2, (g.pinch.w * g.pinch.dist) / dist);
+    } else if (g.pointers.size === 1 && g.start) {
+      const dx = x - g.start.x, dy = y - g.start.y;
+      if (!g.moved && Math.hypot(dx, dy) > 8) g.moved = true;
+      if (g.moved) {
+        const k = g.start.view.w / box().rw;
+        setView(clamp({ ...g.start.view, x: g.start.view.x - dx * k, y: g.start.view.y - dy * k }));
+      }
+    }
+  }
+  function up(id, x, y, cancelled) {
+    const g = gesture.current;
+    if (!g.pointers.has(id)) return;
+    g.pointers.delete(id);
+    if (g.pointers.size === 0) {
+      if (!g.moved && !cancelled) pickAt(x, y);
+      g.start = null; g.pinch = null;
+    } else if (g.pointers.size === 1) {
+      // ein Finger bleibt liegen: ab hier verschieben, ohne Sprung
+      const [p] = [...g.pointers.values()];
+      g.pinch = null;
+      g.start = { x: p.x, y: p.y, view: viewRef.current };
+    }
+  }
+  // Maus (Laptop). Finger laufen über die Touch-Events unten.
+  const isMouse = (e) => e.pointerType === "mouse";
+  function onPointerDown(e) {
+    if (!isMouse(e)) return;
+    try { ref.current.setPointerCapture(e.pointerId); } catch { /* egal */ }
+    down("m", e.clientX, e.clientY);
+  }
+  function onPointerMove(e) { if (isMouse(e)) move("m", e.clientX, e.clientY); }
+  function onPointerUp(e) { if (isMouse(e)) up("m", e.clientX, e.clientY, e.type === "pointercancel"); }
+
+  const zoomedRef = useRef(zoomed);
+  zoomedRef.current = zoomed;
+
+  // Strg + Mausrad / Trackpad-Zoom am Laptop; Safari-Gesten nicht an die Seite weitergeben
+  useEffect(() => {
+    const el = ref.current;
+    const onWheel = (e) => {
+      if (!e.ctrlKey && !zoomedRef.current) return;
+      e.preventDefault();
+      if (e.ctrlKey) {
+        const v = viewRef.current;
+        zoomAt(toPlan(e.clientX, e.clientY), e.clientX, e.clientY, v.w * Math.exp(e.deltaY * 0.01));
+      } else {
+        const v = viewRef.current, k = v.w / box().rw;
+        setView(clamp({ ...v, x: v.x + e.deltaX * k, y: v.y + e.deltaY * k }));
+      }
+    };
+    const stop = (e) => e.preventDefault();
+    const each = (e, fn) => { for (const t of e.changedTouches) fn(t); };
+    const onTouchStart = (e) => { e.preventDefault(); each(e, (t) => down(t.identifier, t.clientX, t.clientY)); };
+    const onTouchMove = (e) => { e.preventDefault(); each(e, (t) => move(t.identifier, t.clientX, t.clientY)); };
+    const onTouchEnd = (e) => { e.preventDefault(); each(e, (t) => up(t.identifier, t.clientX, t.clientY, e.type === "touchcancel")); };
+    const opts = { passive: false };
+    el.addEventListener("wheel", onWheel, opts);
+    el.addEventListener("touchstart", onTouchStart, opts);
+    el.addEventListener("touchmove", onTouchMove, opts);
+    el.addEventListener("touchend", onTouchEnd, opts);
+    el.addEventListener("touchcancel", onTouchEnd, opts);
+    el.addEventListener("gesturestart", stop, opts);
+    el.addEventListener("gesturechange", stop, opts);
+    return () => {
+      el.removeEventListener("wheel", onWheel, opts);
+      el.removeEventListener("touchstart", onTouchStart, opts);
+      el.removeEventListener("touchmove", onTouchMove, opts);
+      el.removeEventListener("touchend", onTouchEnd, opts);
+      el.removeEventListener("touchcancel", onTouchEnd, opts);
+      el.removeEventListener("gesturestart", stop, opts);
+      el.removeEventListener("gesturechange", stop, opts);
+    };
+  }, [layout]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const s = view.w / vw; // Namensschilder bleiben beim Zoomen gleich groß
   const text = (x, y, t, size, rotate) => (
     <text
       x={x} y={y} fontSize={size} fontWeight="600" textAnchor="middle" letterSpacing="1"
@@ -54,82 +186,91 @@ function SeatMap({ layout, labels, mineAt, selected, onPick }) {
   );
 
   return (
-    <svg
-      ref={ref} viewBox={layout.viewBox} width="100%" role="img" aria-label="Grundriss der Mensa"
-      onClick={handleClick} style={{ display: "block", cursor: "pointer", touchAction: "manipulation" }}
-    >
-      {layout.terrace && (
-        <g>
-          <path d={layout.terrace.d} style={{ fill: C.hintBg, stroke: C.border }} strokeWidth="3" strokeDasharray="14 10" />
-          {text(layout.terrace.lx, layout.terrace.ly, layout.terrace.label, 24)}
-        </g>
-      )}
-      <path d={layout.room} style={{ fill: C.cardAlt, stroke: C.soft }} strokeWidth="7" strokeLinejoin="round" />
-      {layout.walls.map((d, i) => <path key={i} d={d} fill="none" style={{ stroke: C.soft }} strokeWidth="5" />)}
-      {layout.doors.map((d, i) => <rect key={i} x={d.x} y={d.y} width={d.w} height={d.h} style={{ fill: C.cardAlt }} />)}
-      {layout.areas.map((a, i) => (
-        <g key={i}>
-          <rect x={a.x} y={a.y} width={a.w} height={a.h} rx={a.round ? 18 : 4} style={{ fill: C.track, stroke: C.border }} strokeWidth="3" />
-          {a.label && text(a.lx, a.ly, a.label, a.rotate ? 30 : 24, a.rotate)}
-        </g>
-      ))}
-      {layout.stairs.map((s, i) => (
-        <g key={i}>
-          <rect x={s.x} y={s.y} width={s.w} height={s.h} rx="4" style={{ fill: C.track, stroke: C.border }} strokeWidth="3" />
-          {Array.from({ length: s.steps }, (_, k) => {
-            if (s.vertical) {
-              const x = s.x + ((k + 1) * s.w) / (s.steps + 1);
-              return <line key={k} x1={x} x2={x} y1={s.y + 8} y2={s.y + s.h - 8} style={{ stroke: C.border }} strokeWidth="3" />;
-            }
-            const y = s.y + ((k + 1) * s.h) / (s.steps + 1);
-            return <line key={k} x1={s.x + 14} x2={s.x + s.w - 14} y1={y} y2={y} style={{ stroke: C.border }} strokeWidth="3" />;
-          })}
-          {s.label && s.outdoor && text(s.x + s.w / 2, s.y - 14, s.label, 24)}
-          {s.label && !s.outdoor && (
-            <>
-              <rect x={s.x + s.w / 2 - 125} y={s.y + s.h / 2 - 30} width="250" height="52" rx="8" style={{ fill: C.track }} />
-              {text(s.x + s.w / 2, s.y + s.h / 2 + 7, s.label, 26)}
-            </>
-          )}
-          {s.arrow && text(s.arrow.x, s.arrow.y, "↕", 34)}
-        </g>
-      ))}
-      {layout.rails.map((r, i) => <rect key={i} x={r.x} y={r.y} width={r.w} height={r.h} rx="4" style={{ fill: C.track, stroke: C.border }} strokeWidth="2" />)}
-      {layout.columns.map((c, i) => <rect key={i} x={c.x} y={c.y} width={c.s} height={c.s} rx="3" style={{ fill: C.muted }} />)}
-
-      {layout.tables.map((t) => {
-        const isMine = mineAt === t.id;
-        const hasFriends = !!labels[t.id];
-        const fill = isMine ? MINE : hasFriends ? GOLD : t.tresen ? C.track : C.card;
-        return (
-          <rect
-            key={t.id} x={t.x} y={t.y} width={t.w} height={t.h} rx="10"
-            style={{ fill, stroke: isMine ? C.green : hasFriends ? "#B8860B" : C.border }}
-            strokeWidth={isMine || hasFriends ? 5 : 3}
-          />
-        );
-      })}
-      {selected && (() => {
-        const t = layout.tables.find((x) => x.id === selected);
-        return t && <rect x={t.x - 9} y={t.y - 9} width={t.w + 18} height={t.h + 18} rx="14" fill="none" style={{ stroke: C.green }} strokeWidth="8" />;
-      })()}
-
-      {/* Namensschilder */}
-      {layout.tables.map((t) => {
-        const label = [mineAt === t.id ? "Du" : null, labels[t.id]].filter(Boolean).join(", ");
-        if (!label) return null;
-        const w = 44 + label.length * 19;
-        const right = t.x + t.w + 14;
-        const x = right + w > vx + vw ? t.x - 14 - w : right;
-        const y = Math.min(Math.max(t.y + t.h / 2 - 34, vy + 4), vy + vh - 72);
-        return (
-          <g key={"l" + t.id} pointerEvents="none">
-            <rect x={x} y={y} width={w} height="68" rx="34" fill="#2B2A26" stroke="#fff" strokeOpacity=".6" strokeWidth="3" />
-            <text x={x + w / 2} y={y + 45} fontSize="32" fontWeight="700" textAnchor="middle" fill="#fff">{label}</text>
+    <div style={{ position: "relative", flex: "1 1 auto", minHeight: 320, margin: "0 -8px" }}>
+      <svg
+        ref={ref} viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`} role="img" aria-label="Grundriss der Mensa" preserveAspectRatio="xMidYMin meet"
+        onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
+        style={{ position: "absolute", inset: 0, width: "100%", height: "100%", display: "block", cursor: zoomed ? "grab" : "pointer", touchAction: "none", userSelect: "none", WebkitUserSelect: "none" }}
+      >
+        {layout.terrace && (
+          <g>
+            <path d={layout.terrace.d} style={{ fill: C.hintBg, stroke: C.border }} strokeWidth="3" strokeDasharray="14 10" />
+            {text(layout.terrace.lx, layout.terrace.ly, layout.terrace.label, 24)}
           </g>
-        );
-      })}
-    </svg>
+        )}
+        <path d={layout.room} style={{ fill: C.cardAlt, stroke: C.soft }} strokeWidth="7" strokeLinejoin="round" />
+        {layout.walls.map((d, i) => <path key={i} d={d} fill="none" style={{ stroke: C.soft }} strokeWidth="5" />)}
+        {layout.doors.map((d, i) => <rect key={i} x={d.x} y={d.y} width={d.w} height={d.h} style={{ fill: C.cardAlt }} />)}
+        {layout.areas.map((a, i) => (
+          <g key={i}>
+            <rect x={a.x} y={a.y} width={a.w} height={a.h} rx={a.round ? 18 : 4} style={{ fill: C.track, stroke: C.border }} strokeWidth="3" />
+            {a.label && text(a.lx, a.ly, a.label, a.rotate ? 30 : 24, a.rotate)}
+          </g>
+        ))}
+        {layout.stairs.map((st, i) => (
+          <g key={i}>
+            <rect x={st.x} y={st.y} width={st.w} height={st.h} rx="4" style={{ fill: C.track, stroke: C.border }} strokeWidth="3" />
+            {Array.from({ length: st.steps }, (_, k) => {
+              if (st.vertical) {
+                const x = st.x + ((k + 1) * st.w) / (st.steps + 1);
+                return <line key={k} x1={x} x2={x} y1={st.y + 8} y2={st.y + st.h - 8} style={{ stroke: C.border }} strokeWidth="3" />;
+              }
+              const y = st.y + ((k + 1) * st.h) / (st.steps + 1);
+              return <line key={k} x1={st.x + 14} x2={st.x + st.w - 14} y1={y} y2={y} style={{ stroke: C.border }} strokeWidth="3" />;
+            })}
+            {st.label && st.outdoor && text(st.x + st.w / 2, st.y - 14, st.label, 24)}
+            {st.label && !st.outdoor && (
+              <>
+                <rect x={st.x + st.w / 2 - 125} y={st.y + st.h / 2 - 30} width="250" height="52" rx="8" style={{ fill: C.track }} />
+                {text(st.x + st.w / 2, st.y + st.h / 2 + 7, st.label, 26)}
+              </>
+            )}
+            {st.arrow && text(st.arrow.x, st.arrow.y, "↕", 34)}
+          </g>
+        ))}
+        {layout.rails.map((r, i) => <rect key={i} x={r.x} y={r.y} width={r.w} height={r.h} rx="4" style={{ fill: C.track, stroke: C.border }} strokeWidth="2" />)}
+        {layout.columns.map((c, i) => <rect key={i} x={c.x} y={c.y} width={c.s} height={c.s} rx="3" style={{ fill: C.muted }} />)}
+
+        {layout.tables.map((t) => {
+          const isMine = mineAt === t.id;
+          const hasFriends = !!labels[t.id];
+          const fill = isMine ? MINE : hasFriends ? GOLD : t.tresen ? C.track : C.card;
+          return (
+            <rect
+              key={t.id} x={t.x} y={t.y} width={t.w} height={t.h} rx="10"
+              style={{ fill, stroke: isMine ? C.green : hasFriends ? "#B8860B" : C.border }}
+              strokeWidth={isMine || hasFriends ? 5 : 3}
+            />
+          );
+        })}
+        {selected && (() => {
+          const t = layout.tables.find((x) => x.id === selected);
+          return t && <rect x={t.x - 9} y={t.y - 9} width={t.w + 18} height={t.h + 18} rx="14" fill="none" style={{ stroke: C.green }} strokeWidth="8" />;
+        })()}
+
+        {/* Namensschilder */}
+        {layout.tables.map((t) => {
+          const label = [mineAt === t.id ? "Du" : null, labels[t.id]].filter(Boolean).join(", ");
+          if (!label) return null;
+          const w = (44 + label.length * 19) * s, h = 68 * s;
+          const right = t.x + t.w + 14 * s;
+          const x = right + w > view.x + view.w ? t.x - 14 * s - w : right;
+          const y = Math.min(Math.max(t.y + t.h / 2 - h / 2, view.y + 4 * s), view.y + view.h - h - 4 * s);
+          return (
+            <g key={"l" + t.id} pointerEvents="none">
+              <rect x={x} y={y} width={w} height={h} rx={h / 2} fill="#2B2A26" stroke="#fff" strokeOpacity=".6" strokeWidth={3 * s} />
+              <text x={x + w / 2} y={y + 45 * s} fontSize={32 * s} fontWeight="700" textAnchor="middle" fill="#fff">{label}</text>
+            </g>
+          );
+        })}
+      </svg>
+      {zoomed && (
+        <button
+          type="button" onClick={() => setView(full)}
+          style={{ position: "absolute", right: 8, top: 8, border: `1px solid ${C.border}`, background: C.card, color: C.text, borderRadius: 18, padding: "6px 12px", fontSize: 13, fontWeight: 700, cursor: "pointer", boxShadow: "0 1px 4px rgba(0,0,0,.12)" }}
+        >⤢ Ganzer Plan</button>
+      )}
+    </div>
   );
 }
 
@@ -156,7 +297,23 @@ export function SeatSheet({ onClose, userId, checkins, names, canteens, homeCant
   useEffect(() => {
     const onKey = (e) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    // iPhone: Zwei-Finger-Zoom der ganzen Seite verhindern, solange der Sitzplan offen ist
+    const stop = (e) => e.preventDefault();
+    const multi = (e) => { if (e.touches.length > 1) e.preventDefault(); };
+    const opts = { passive: false };
+    document.addEventListener("gesturestart", stop, opts);
+    document.addEventListener("gesturechange", stop, opts);
+    document.addEventListener("touchmove", multi, opts);
+    const meta = document.querySelector('meta[name="viewport"]');
+    const before = meta?.getAttribute("content");
+    if (meta) meta.setAttribute("content", "width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover");
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.removeEventListener("gesturestart", stop, opts);
+      document.removeEventListener("gesturechange", stop, opts);
+      document.removeEventListener("touchmove", multi, opts);
+      if (meta && before) meta.setAttribute("content", before);
+    };
   }, [onClose]);
   useEffect(() => setSelected(null), [canteenId]);
 
@@ -221,7 +378,7 @@ export function SeatSheet({ onClose, userId, checkins, names, canteens, homeCant
         </select>
 
         {layout ? (
-          <SeatMap layout={layout} labels={labels} mineAt={mine?.table_id} selected={selected} onPick={pick} />
+          <SeatMap key={canteenId} layout={layout} labels={labels} mineAt={mine?.table_id} selected={selected} onPick={pick} />
         ) : (
           <div style={{ ...styles.empty, padding: "18px 12px" }}>
             <div style={{ fontSize: 34, marginBottom: 6 }}>🍽️</div>
@@ -261,7 +418,7 @@ export function SeatSheet({ onClose, userId, checkins, names, canteens, homeCant
               <button type="button" style={styles.ghostBtn} onClick={checkOut} disabled={busy}>Bin weg</button>
             </>
           ) : layout ? (
-            <div style={{ fontSize: 14, color: C.muted, textAlign: "center", padding: 8 }}>Tippe auf deinen Tisch</div>
+            <div style={{ fontSize: 14, color: C.muted, textAlign: "center", padding: 8 }}>Tippe auf deinen Tisch · mit zwei Fingern zoomen</div>
           ) : (
             <>
               <button type="button" style={styles.primaryBtn} onClick={() => checkIn(null)} disabled={busy}>

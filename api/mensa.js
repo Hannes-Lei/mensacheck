@@ -69,6 +69,9 @@ const PASTA_EXTRA =
   /^(vollkorn-?)?(spirelli|spaghetti|penne|fusilli|farfalle|tagliatelle|makkaroni|maccheroni|rigatoni|tortiglioni|linguine|conchiglie|nudeln|bandnudeln|hörnchen\w*|gnocchi)\b|gouda|parmesan|hartkäse|reibekäse|bergkäse|emmentaler|pizzaschmelz/i;
 const SAUCE_HINT = /soße|sosse|sauce|sugo|pesto|bolognese|carbonara|gulasch|ragout|ragù|würzfleisch|\smit\s/i;
 
+// Platzhalter ohne echtes Gericht ("Pastateller nach Angebot") zeigen wir nicht
+const PLACEHOLDER = /nach angebot|laut aushang|siehe aushang|wechselnde[sn]? angebot/i;
+
 function isPastaExtra(category, name) {
   return /pasta/i.test(category || "") && PASTA_EXTRA.test(name) && !SAUCE_HINT.test(name);
 }
@@ -90,7 +93,11 @@ function cleanMeal(meal) {
   for (const note of notes) {
     const n = note.trim();
     const l = n.toLowerCase();
-    if (ALLERGENS_L.includes(l)) {
+    if (l.includes("alkohol")) {
+      allergens.push("Alkohol"); // wichtig für manche (z.B. Schwangere, Religion) – bei den Allergenen zeigen
+    } else if (ADDITIVES_L.some((a) => l.includes(a))) {
+      // andere Zusatzstoffe ("enthält Farbstoff") weglassen, sind keine Beilage
+    } else if (ALLERGENS_L.includes(l)) {
       allergens.push(n);
       if (l === "fisch") hasMeat = true;
     } else if (MEAT_L.includes(l)) {
@@ -128,7 +135,7 @@ function cleanMeal(meal) {
     category: meal.category || "",
     price: meal.prices?.students ?? null,
     sides,
-    allergens,
+    allergens: [...new Set(allergens)],
     diet,
     isMain: !EXTRA_CATEGORY.test(meal.category || ""),
   };
@@ -141,6 +148,7 @@ function cleanDays(days) {
     for (const m of day.meals || []) {
       const meal = cleanMeal(m);
       if (isPastaExtra(meal.category, meal.name)) continue; // nur Soßen zeigen
+      if (PLACEHOLDER.test(meal.name)) continue; // "nach Angebot" sagt nichts
       const key = `${meal.category}|${meal.name}`;
       if (seen.has(key)) continue; // doppelte Einträge entfernen
       seen.add(key);

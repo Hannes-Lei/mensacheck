@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "./supabase.js";
 import {
-  todayBerlin, daysAgo, isWeekend, lastMensaDay, formatPrice, formatAvg, dayLabel, friendlyError, dishKey, dishName, shortDate, isPastaExtra,
+  todayBerlin, daysAgo, isWeekend, lastMensaDay, formatPrice, formatAvg, dayLabel, friendlyError, dishKey, dishName, shortDate, isPastaExtra, isPlaceholderMeal, cleanSidesAndAllergens,
 } from "./helpers.js";
 import { Stars, StarLine, Chip, DietBadge, Avatar, formatStars, styles, C, FONT_HEAD } from "./ui.jsx";
 import { CommentItem, THREAD_SELECT } from "./Interactions.jsx";
@@ -162,7 +162,9 @@ function MealCard({
 
       {m.allergens.length > 0 && (
         <button type="button" onClick={() => setShowAllergens((s) => !s)} style={styles.smallToggle}>
-          {showAllergens ? `Allergene: ${m.allergens.join(", ")}` : "Allergene anzeigen"}
+          {showAllergens
+            ? `${/pasta|pizza/i.test(m.category) ? "Allergene der ganzen Theke" : "Allergene"}: ${m.allergens.join(", ")}`
+            : "Allergene anzeigen"}
         </button>
       )}
 
@@ -239,13 +241,14 @@ function MealCard({
 
 // Ein Eintrag aus dem Archiv (Tabelle menu_items) als Gericht für die Anzeige
 function archivedMeal(r) {
+  const { sides, allergens } = cleanSidesAndAllergens(r.sides || [], r.allergens || []);
   return {
     id: `archiv-${r.meal_name}`,
     name: r.meal_name,
     category: r.category || "",
     price: r.price,
-    sides: r.sides || [],
-    allergens: r.allergens || [],
+    sides,
+    allergens,
     diet: r.diet || null,
     isMain: r.is_main ?? true,
   };
@@ -570,8 +573,8 @@ export default function TodayTab({
         if (i >= 0) list.splice(i + 1, 0, m);
         else list.push(m);
       };
-      (archive || []).filter((r) => !isPastaExtra(r.category, r.meal_name)).forEach((r) => add(archivedMeal(r)));
-      Object.values(ratedMeals).forEach((r) =>
+      (archive || []).filter((r) => !isPastaExtra(r.category, r.meal_name) && !isPlaceholderMeal(r.meal_name)).forEach((r) => add(archivedMeal(r)));
+      Object.values(ratedMeals).filter((r) => !isPlaceholderMeal(r.meal_name)).forEach((r) =>
         add(archivedMeal({ meal_name: r.meal_name, category: r.category, price: r.price })));
       all = list;
     }

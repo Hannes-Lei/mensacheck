@@ -130,3 +130,20 @@ const SAUCE_HINT = /soße|sosse|sauce|sugo|pesto|bolognese|carbonara|gulasch|rag
 export function isPastaExtra(category, name) {
   return /pasta/i.test(category || "") && PASTA_EXTRA.test(name || "") && !SAUCE_HINT.test(name || "");
 }
+
+// Platzhalter ohne echtes Gericht ("Pastateller nach Angebot") – gleiche Regel wie in api/mensa.js
+const PLACEHOLDER = /nach angebot|laut aushang|siehe aushang|wechselnde[sn]? angebot/i;
+export function isPlaceholderMeal(name) {
+  return PLACEHOLDER.test(name || "");
+}
+
+// Ältere gemerkte Gerichte: "enthält Alkohol" o.Ä. stand dort noch als Beilage.
+// Alkohol wandert zu den Allergenen, andere Zusatzstoffe fallen weg.
+const ADDITIVE_HINT = /alkohol|farbstoff|konservierung|antioxidation|phosphat|geschmacksverstärker|süßungsmittel|koffein|chinin|geschwefelt|geschwärzt|gewachst/i;
+export function cleanSidesAndAllergens(sides = [], allergens = []) {
+  const extra = sides.some((x) => /alkohol/i.test(x)) ? ["Alkohol"] : [];
+  return {
+    sides: sides.filter((x) => !ADDITIVE_HINT.test(x)),
+    allergens: [...new Set([...allergens, ...extra])],
+  };
+}

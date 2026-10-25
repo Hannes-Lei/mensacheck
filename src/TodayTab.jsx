@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "./supabase.js";
 import {
-  todayBerlin, daysAgo, isWeekend, lastMensaDay, formatPrice, formatAvg, dayLabel, friendlyError, dishKey, dishName, shortDate, isPastaExtra, isPlaceholderMeal, cleanSidesAndAllergens,
+  todayBerlin, daysAgo, isWeekend, lastMensaDay, formatPrice, formatAvg, dayLabel, friendlyError, dishKey, dishName, shortDate, isPastaExtra, isPlaceholderMeal, cleanSidesAndAllergens, mealGroup,
 } from "./helpers.js";
 import { Stars, StarLine, Chip, DietBadge, Avatar, formatStars, styles, C, FONT_HEAD } from "./ui.jsx";
 import { CommentItem, THREAD_SELECT } from "./Interactions.jsx";
@@ -580,9 +580,10 @@ export default function TodayTab({
     }
 
     const filtered = all.filter((m) => matchesDiet(m, dietFilter));
+    // Standard: erst Fleisch/Fisch, dann vegan/vegetarisch, dann Pasta, dann der Rest
     const sorted = sortByRating
       ? [...filtered].sort((a, b) => byTotal(totals[dishName(a.name)], totals[dishName(b.name)]))
-      : filtered;
+      : [...filtered].sort((a, b) => mealGroup(a) - mealGroup(b));
 
     return {
       mains: sorted.filter((m) => m.isMain),

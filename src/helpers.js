@@ -147,3 +147,14 @@ export function cleanSidesAndAllergens(sides = [], allergens = []) {
     allergens: [...new Set([...allergens, ...extra])],
   };
 }
+
+// Reihenfolge bei "Heute": 0 Fleisch/Fisch · 1 vegan/vegetarisch · 2 Pasta/Pizza · 3 der Rest
+const MEAT_WORDS = /fleisch|hack|schwein|rind|kalb|lamm|wild|geflügel|hähnchen|huhn|chicken|pute|ente|schinken|speck|bacon|salami|wurst|würst|chorizo|kassler|leberkäse|frikadelle|bulette|cevapcici|döner|bolognese|fisch|lachs|scholle|kabeljau|forelle|hering|matjes|garnele|shrimp|calamari|muschel|thunfisch|seelachs|schnitzel|gulasch|roulade|braten|steak|geschnetzeltes/i;
+const MEAT_SUBST = /tofu|soja|seitan|vegetar|veggie|planted|pflanz|fleischlos|like /i;
+export function mealGroup(m) {
+  const cat = m.category || "";
+  if (/pasta|pizza/i.test(cat)) return 2;
+  if (m.diet === "vegan" || m.diet === "vegetarisch" || /vegan|vegetar/i.test(cat)) return 1;
+  if (/fleisch|fisch|geflügel/i.test(cat) || (MEAT_WORDS.test(m.name || "") && !MEAT_SUBST.test(m.name || ""))) return 0;
+  return 3;
+}

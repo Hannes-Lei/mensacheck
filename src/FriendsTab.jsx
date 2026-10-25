@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "./supabase.js";
 import { daysAgo, todayBerlin, formatDate, timeAgo, friendlyError } from "./helpers.js";
-import { Chip, StarLine, Avatar, formatStars, styles, C } from "./ui.jsx";
+import { Chip, StarLine, Avatar, formatStars, styles, C, FONT_HEAD } from "./ui.jsx";
 import { Interactions, LongText, THREAD_SELECT } from "./Interactions.jsx";
 import { SeatRow, SeatSheet, SeatNotice } from "./Seats.jsx";
 
@@ -97,31 +97,77 @@ function GroupInfo({ group, members, userId, onLeft, showToast, seatRow }) {
     onLeft();
   }
 
+  // Viele Mitglieder: nur ein paar Bilder + "+12", antippen zeigt alle
+  const [showAll, setShowAll] = useState(false);
+  const [showInvite, setShowInvite] = useState(false);
+  const sorted = [...members].sort((a, b) => (a.user_id === userId ? -1 : b.user_id === userId ? 1 : 0));
+  const label = (m) => (m.user_id === userId ? "Du" : m.username);
+  const STACK = 6;
+  const shown = sorted.slice(0, STACK);
+  const rest = sorted.length - shown.length;
+  const names = sorted.filter((m) => m.user_id !== userId).map((m) => m.username);
+  const preview = names.length === 0 ? "nur du"
+    : names.length <= 3 ? names.join(", ")
+    : `${names.slice(0, 2).join(", ")} +${names.length - 2}`;
+
   return (
     <div style={styles.card}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
-        <strong style={{ fontSize: 16 }}>{group.name}</strong>
-        <span style={{ fontSize: 13, color: C.muted, whiteSpace: "nowrap" }}>
-          {members.length} {members.length === 1 ? "Mitglied" : "Mitglieder"}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+        <strong style={{ fontFamily: FONT_HEAD, fontSize: 20, fontWeight: 800, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{group.name}</strong>
+        <button
+          type="button" onClick={() => setShowInvite((v) => !v)} aria-expanded={showInvite}
+          style={{ ...styles.chip, padding: "5px 11px", fontSize: 12, ...(showInvite ? styles.chipOn : {}) }}
+        >＋ Einladen</button>
+      </div>
+
+      <button
+        type="button" onClick={() => setShowAll((v) => !v)} aria-expanded={showAll}
+        style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", marginTop: 10, padding: 0, background: "none", border: "none", cursor: "pointer", textAlign: "left", color: C.text }}
+      >
+        <span style={{ display: "flex", flexShrink: 0 }}>
+          {shown.map((m, i) => (
+            <span key={m.user_id} style={{ marginLeft: i ? -9 : 0, display: "flex" }}>
+              <Avatar name={m.username} path={m.avatar_path} size={30} />
+            </span>
+          ))}
+          {rest > 0 && (
+            <span style={{ marginLeft: -9, width: 30, height: 30, borderRadius: "50%", border: `2px solid ${C.ink}`, background: C.card, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800 }}>
+              +{rest}
+            </span>
+          )}
         </span>
-      </div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
-        {members.map((m) => (
-          <span key={m.user_id} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 13 }}>
-            <Avatar name={m.username} path={m.avatar_path} size={22} /> {m.user_id === userId ? "Du" : m.username}
-          </span>
-        ))}
-      </div>
+        <span style={{ flex: 1, minWidth: 0, fontSize: 13, lineHeight: 1.3 }}>
+          <strong>{members.length} {members.length === 1 ? "Mitglied" : "Mitglieder"}</strong>
+          <span style={{ display: "block", color: C.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{preview}</span>
+        </span>
+        <span style={{ color: C.muted, fontSize: 13, flexShrink: 0 }}>{showAll ? "▲" : "▼"}</span>
+      </button>
+
+      {showAll && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10, maxHeight: 220, overflowY: "auto" }}>
+          {sorted.map((m) => (
+            <span key={m.user_id} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 13, fontWeight: 600 }}>
+              <Avatar name={m.username} path={m.avatar_path} size={22} /> {label(m)}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {showInvite && (
+        <div style={{ marginTop: 12, padding: 12, borderRadius: 14, background: C.commentBg, border: `2px dashed ${C.ink}`, display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <button type="button" style={styles.smallPrimary} onClick={invite}>📨 Einladung teilen</button>
+            <span style={{ fontSize: 13, color: C.muted }}>
+              Code: <strong style={{ letterSpacing: ".1em", color: C.text }}>{group.code}</strong>
+            </span>
+          </div>
+          <button type="button" style={{ ...styles.smallAction, color: C.muted, alignSelf: "flex-start" }} onClick={leave}>
+            Gruppe verlassen
+          </button>
+        </div>
+      )}
+
       {seatRow}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
-        <button type="button" style={styles.smallPrimary} onClick={invite}>📨 Freunde einladen</button>
-        <span style={{ fontSize: 13, color: C.muted }}>
-          Code: <strong style={{ letterSpacing: ".1em", color: C.text }}>{group.code}</strong>
-        </span>
-        <button type="button" style={{ ...styles.smallAction, color: C.muted, marginLeft: "auto" }} onClick={leave}>
-          Verlassen
-        </button>
-      </div>
     </div>
   );
 }

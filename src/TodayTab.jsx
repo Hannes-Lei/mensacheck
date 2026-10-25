@@ -3,7 +3,7 @@ import { supabase } from "./supabase.js";
 import {
   todayBerlin, daysAgo, isWeekend, lastMensaDay, formatPrice, formatAvg, dayLabel, friendlyError, dishKey, dishName, shortDate, isPastaExtra,
 } from "./helpers.js";
-import { Stars, StarLine, Chip, DietBadge, Avatar, formatStars, styles, C } from "./ui.jsx";
+import { Stars, StarLine, Chip, DietBadge, Avatar, formatStars, styles, C, FONT_HEAD } from "./ui.jsx";
 import { CommentItem, THREAD_SELECT } from "./Interactions.jsx";
 
 // ============================================================================
@@ -69,7 +69,7 @@ function ScoreBar({ total, day, date, today, compact }) {
   }
   return (
     <div style={scoreBox} aria-label={`Bewertung ${formatAvg(total.avg_stars)} von 5, ${votes(total.votes)}`}>
-      <span style={{ fontSize: compact ? 19 : 22, fontWeight: 800, lineHeight: 1, color: C.text }}>
+      <span style={{ fontFamily: FONT_HEAD, fontSize: compact ? 22 : 26, fontWeight: 800, lineHeight: 1, color: C.text }}>
         {formatAvg(total.avg_stars)}
       </span>
       <span style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
@@ -89,7 +89,7 @@ const friendRow = {
 };
 const friendChip = {
   flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 10px 3px 4px",
-  borderRadius: 14, background: C.commentBg, fontSize: 13, color: C.soft, whiteSpace: "nowrap",
+  borderRadius: 14, background: C.card, border: `2px solid ${C.ink}`, fontSize: 13, fontWeight: 700, color: C.text, whiteSpace: "nowrap",
 };
 const scoreBox = { display: "flex", alignItems: "center", gap: 10, marginTop: 10 };
 const scoreEmpty = { gap: 6, fontSize: 13, color: C.faint };
@@ -136,7 +136,7 @@ function MealCard({
       <div style={styles.cardTop}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={styles.metaRow}>
-            <span style={styles.category}>{m.category}</span>
+            {m.category && <span style={styles.category}>{m.category}</span>}
             <DietBadge diet={m.diet} />
           </div>
           <h3 style={{ ...styles.mealName, ...(compact ? { fontSize: 15 } : {}) }}>{m.name}</h3>
@@ -683,14 +683,18 @@ export default function TodayTab({
 
         {winner && !dayLoading && (
           <button type="button" style={styles.winner} onClick={() => jumpTo(winner.name)}>
-            <span style={{ fontSize: 30, lineHeight: 1 }}>🏆</span>
             <span style={{ flex: 1, minWidth: 0 }}>
-              <span style={styles.winnerLabel}>{date === today ? "Heute vorn" : date === daysAgo(1) ? "Gestern vorn" : "An diesem Tag vorn"}</span>
-              <span style={{ display: "block", fontSize: 16, fontWeight: 800, lineHeight: 1.3, marginTop: 2 }}>{winner.name}</span>
+              <span style={styles.winnerLabel}>🏆 {date === today ? "Heute vorn" : date === daysAgo(1) ? "Gestern vorn" : "An diesem Tag vorn"}</span>
+              <span style={{ display: "block", fontFamily: FONT_HEAD, fontSize: 24, fontWeight: 800, lineHeight: 1.1, marginTop: 4, letterSpacing: "-0.02em" }}>{winner.name}</span>
             </span>
-            <span style={{ textAlign: "right", flexShrink: 0 }}>
-              <span style={{ display: "block", fontSize: 20, fontWeight: 800 }}>{formatAvg(winnerTotal.avg_stars)} <span style={{ color: C.gold }}>★</span></span>
-              <span style={{ fontSize: 12, color: C.muted }}>
+            <span
+              style={{
+                width: 72, height: 72, borderRadius: "50%", flexShrink: 0, background: C.yellow, border: `2.5px solid ${C.ink}`,
+                display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", transform: "rotate(8deg)", color: C.onAccent,
+              }}
+            >
+              <span style={{ fontFamily: FONT_HEAD, fontSize: 24, fontWeight: 800, lineHeight: 1 }}>{formatAvg(winnerTotal.avg_stars)}</span>
+              <span style={{ fontSize: 10, fontWeight: 800 }}>
                 {winnerTotal.votes} {winnerTotal.votes === 1 ? "Stimme" : "Stimmen"}
               </span>
             </span>

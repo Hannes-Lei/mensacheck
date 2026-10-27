@@ -12,7 +12,7 @@
 
 // Alle Mensen des Studentenwerks Leipzig mit ihrer OpenMensa-Nummer.
 // Neue Mensa dazunehmen? Einfach eine Zeile ergänzen.
-const CANTEENS = [
+export const CANTEENS = [
   { id: 63, name: "Mensa am Park" },
   { id: 64, name: "Mensa Academica" },
   { id: 65, name: "Mensa am Elsterbecken" },
@@ -141,7 +141,7 @@ function cleanMeal(meal) {
   };
 }
 
-function cleanDays(days) {
+export function cleanDays(days) {
   return (Array.isArray(days) ? days : []).map((day) => {
     const seen = new Set();
     const meals = [];
@@ -159,7 +159,7 @@ function cleanDays(days) {
 }
 
 // Datum in deutscher Zeit, verschoben um "offset" Tage, als "2026-10-20"
-function berlinDate(offset = 0) {
+export function berlinDate(offset = 0) {
   const today = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Berlin" }).format(new Date());
   const d = new Date(today + "T12:00:00Z");
   d.setUTCDate(d.getUTCDate() + offset);

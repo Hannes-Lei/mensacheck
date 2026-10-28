@@ -25,6 +25,22 @@ export function joinNames(names) {
   return `${names[0]}, ${names[1]} +${names.length - 2}`;
 }
 
+// Gedrehte Tische (rot in Grad um die Mitte): Punkt ins Tisch-System drehen
+function toTable(t, p) {
+  if (!t.rot) return p;
+  const cx = t.x + t.w / 2, cy = t.y + t.h / 2, a = (-t.rot * Math.PI) / 180;
+  const dx = p.x - cx, dy = p.y - cy;
+  return { x: cx + dx * Math.cos(a) - dy * Math.sin(a), y: cy + dx * Math.sin(a) + dy * Math.cos(a) };
+}
+// Umriss eines (evtl. gedrehten) Tischs als achsparalleles Rechteck – für die Namensschilder
+function outerBox(t) {
+  if (!t.rot) return t;
+  const a = (t.rot * Math.PI) / 180, c = Math.abs(Math.cos(a)), sn = Math.abs(Math.sin(a));
+  const w = t.w * c + t.h * sn, h = t.w * sn + t.h * c;
+  return { x: t.x + t.w / 2 - w / 2, y: t.y + t.h / 2 - h / 2, w, h };
+}
+const spin = (o) => (o.rot ? `rotate(${o.rot} ${o.x + (o.w ?? o.s) / 2} ${o.y + (o.h ?? o.s) / 2})` : undefined);
+
 // ---- Der Grundriss ----------------------------------------------------------
 // Füllt den freien Platz im Fenster. Mit zwei Fingern (oder Strg + Mausrad)
 // wird nur der Plan vergrößert, mit einem Finger verschoben, Tippen wählt den
@@ -74,8 +90,9 @@ function SeatMap({ layout, labels, mineAt, selected, onPick }) {
     const reach = 80 * (viewRef.current.w / vw);
     let best = null, bestD = reach;
     for (const t of layout.tables) {
-      const dx = Math.max(t.x - p.x, 0, p.x - (t.x + t.w));
-      const dy = Math.max(t.y - p.y, 0, p.y - (t.y + t.h));
+      const q = toTable(t, p);
+      const dx = Math.max(t.x - q.x, 0, q.x - (t.x + t.w));
+      const dy = Math.max(t.y - q.y, 0, q.y - (t.y + t.h));
       const d = Math.hypot(dx, dy);
       if (d < bestD) { best = t; bestD = d; }
     }
@@ -198,15 +215,22 @@ function SeatMap({ layout, labels, mineAt, selected, onPick }) {
             {text(layout.terrace.lx, layout.terrace.ly, layout.terrace.label, 24)}
           </g>
         )}
-        <path d={layout.room} style={{ fill: C.cardAlt, stroke: C.soft }} strokeWidth="7" strokeLinejoin="round" />
-        {layout.walls.map((d, i) => <path key={i} d={d} fill="none" style={{ stroke: C.soft }} strokeWidth="5" />)}
-        {layout.doors.map((d, i) => <rect key={i} x={d.x} y={d.y} width={d.w} height={d.h} style={{ fill: C.cardAlt }} />)}
+        <path d={layout.room} style={{ fill: C.cardAlt, stroke: layout.roomStroke === false ? "none" : C.soft }} strokeWidth="7" strokeLinejoin="round" />
         {layout.areas.map((a, i) => (
           <g key={i}>
-            <rect x={a.x} y={a.y} width={a.w} height={a.h} rx={a.round ? 18 : 4} style={{ fill: C.track, stroke: C.border }} strokeWidth="3" />
-            {a.label && text(a.lx, a.ly, a.label, a.rotate ? 30 : 24, a.rotate)}
+            {a.d
+              ? <path d={a.d} style={{ fill: C.track, stroke: C.border }} strokeWidth="3" strokeLinejoin="round" />
+              : <rect x={a.x} y={a.y} width={a.w} height={a.h} rx={a.round ? 18 : 4} style={{ fill: C.track, stroke: C.border }} strokeWidth="3" />}
+            {a.label && (a.angle
+              ? <text x={a.lx} y={a.ly} fontSize={a.size} fontWeight="600" textAnchor="middle" letterSpacing="1" style={{ fill: C.faint }} transform={`rotate(${a.angle} ${a.lx} ${a.ly})`}>{a.label}</text>
+              : text(a.lx, a.ly, a.label, a.size ?? (a.rotate ? 30 : 24), a.rotate))}
           </g>
         ))}
+        {layout.walls.map((w, i) => (
+          <path key={i} d={typeof w === "string" ? w : w.d} fill="none" style={{ stroke: C.soft }} strokeWidth={typeof w === "string" ? 5 : w.w} strokeLinecap="round" />
+        ))}
+        {(layout.windows || []).map((d, i) => <path key={i} d={d} fill="none" style={{ stroke: C.cardAlt }} strokeWidth="2.5" />)}
+        {(layout.doors || []).map((d, i) => <rect key={i} x={d.x} y={d.y} width={d.w} height={d.h} style={{ fill: C.cardAlt }} />)}
         {layout.stairs.map((st, i) => (
           <g key={i}>
             <rect x={st.x} y={st.y} width={st.w} height={st.h} rx="4" style={{ fill: C.track, stroke: C.border }} strokeWidth="3" />
@@ -228,8 +252,12 @@ function SeatMap({ layout, labels, mineAt, selected, onPick }) {
             {st.arrow && text(st.arrow.x, st.arrow.y, "↕", 34)}
           </g>
         ))}
-        {layout.rails.map((r, i) => <rect key={i} x={r.x} y={r.y} width={r.w} height={r.h} rx="4" style={{ fill: C.track, stroke: C.border }} strokeWidth="2" />)}
-        {layout.columns.map((c, i) => <rect key={i} x={c.x} y={c.y} width={c.s} height={c.s} rx="3" style={{ fill: C.muted }} />)}
+        {(layout.rails || []).map((r, i) => <rect key={i} x={r.x} y={r.y} width={r.w} height={r.h} rx="4" style={{ fill: C.track, stroke: C.border }} strokeWidth="2" />)}
+        {layout.columns.map((c, i) => <rect key={i} x={c.x} y={c.y} width={c.s} height={c.s} rx="2" style={{ fill: C.muted }} transform={spin(c)} />)}
+        {(layout.labels || []).map((l, i) => (
+          <text key={i} x={l.x} y={l.y} fontSize={l.size} fontWeight="700" textAnchor="middle" letterSpacing="1" style={{ fill: C.faint }}
+            transform={l.rot ? `rotate(${l.rot} ${l.x} ${l.y})` : undefined}>{l.text}</text>
+        ))}
 
         {layout.tables.map((t) => {
           const isMine = mineAt === t.id;
@@ -237,25 +265,26 @@ function SeatMap({ layout, labels, mineAt, selected, onPick }) {
           const fill = isMine ? MINE : hasFriends ? GOLD : t.tresen ? C.track : C.card;
           return (
             <rect
-              key={t.id} x={t.x} y={t.y} width={t.w} height={t.h} rx="10"
+              key={t.id} x={t.x} y={t.y} width={t.w} height={t.h} rx={Math.min(10, t.h / 3)}
               style={{ fill, stroke: isMine ? C.green : hasFriends ? "#B8860B" : C.border }}
-              strokeWidth={isMine || hasFriends ? 5 : 3}
+              strokeWidth={isMine || hasFriends ? 5 : 3} transform={spin(t)}
             />
           );
         })}
         {selected && (() => {
           const t = layout.tables.find((x) => x.id === selected);
-          return t && <rect x={t.x - 9} y={t.y - 9} width={t.w + 18} height={t.h + 18} rx="14" fill="none" style={{ stroke: C.green }} strokeWidth="8" />;
+          return t && <rect x={t.x - 9} y={t.y - 9} width={t.w + 18} height={t.h + 18} rx="14" fill="none" style={{ stroke: C.green }} strokeWidth="8" transform={spin(t)} />;
         })()}
 
         {/* Namensschilder */}
         {layout.tables.map((t) => {
           const label = [mineAt === t.id ? "Du" : null, labels[t.id]].filter(Boolean).join(", ");
           if (!label) return null;
+          const b = outerBox(t);
           const w = (44 + label.length * 19) * s, h = 68 * s;
-          const right = t.x + t.w + 14 * s;
-          const x = right + w > view.x + view.w ? t.x - 14 * s - w : right;
-          const y = Math.min(Math.max(t.y + t.h / 2 - h / 2, view.y + 4 * s), view.y + view.h - h - 4 * s);
+          const right = b.x + b.w + 14 * s;
+          const x = right + w > view.x + view.w ? b.x - 14 * s - w : right;
+          const y = Math.min(Math.max(b.y + b.h / 2 - h / 2, view.y + 4 * s), view.y + view.h - h - 4 * s);
           return (
             <g key={"l" + t.id} pointerEvents="none">
               <rect x={x} y={y} width={w} height={h} rx={h / 2} fill="#2B2A26" stroke="#fff" strokeOpacity=".6" strokeWidth={3 * s} />

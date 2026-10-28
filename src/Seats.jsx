@@ -220,7 +220,8 @@ function SeatMap({ layout, labels, mineAt, selected, onPick }) {
           <g key={i}>
             {a.d
               ? <path d={a.d} style={{ fill: C.track, stroke: C.border }} strokeWidth="3" strokeLinejoin="round" />
-              : <rect x={a.x} y={a.y} width={a.w} height={a.h} rx={a.round ? 18 : 4} style={{ fill: C.track, stroke: C.border }} strokeWidth="3" />}
+              : <rect x={a.x} y={a.y} width={a.w} height={a.h} rx={a.round ? Math.min(18, a.w / 4) : 4}
+                  style={a.tone === "hint" ? { fill: C.hintBg, stroke: "none" } : { fill: C.track, stroke: C.border }} strokeWidth="3" />}
             {a.label && (a.angle
               ? <text x={a.lx} y={a.ly} fontSize={a.size} fontWeight="600" textAnchor="middle" letterSpacing="1" style={{ fill: C.faint }} transform={`rotate(${a.angle} ${a.lx} ${a.ly})`}>{a.label}</text>
               : text(a.lx, a.ly, a.label, a.size ?? (a.rotate ? 30 : 24), a.rotate))}
@@ -237,10 +238,10 @@ function SeatMap({ layout, labels, mineAt, selected, onPick }) {
             {Array.from({ length: st.steps }, (_, k) => {
               if (st.vertical) {
                 const x = st.x + ((k + 1) * st.w) / (st.steps + 1);
-                return <line key={k} x1={x} x2={x} y1={st.y + 8} y2={st.y + st.h - 8} style={{ stroke: C.border }} strokeWidth="3" />;
+                return <line key={k} x1={x} x2={x} y1={st.y + (st.inset ?? 8)} y2={st.y + st.h - (st.inset ?? 8)} style={{ stroke: C.border }} strokeWidth="3" />;
               }
               const y = st.y + ((k + 1) * st.h) / (st.steps + 1);
-              return <line key={k} x1={st.x + 14} x2={st.x + st.w - 14} y1={y} y2={y} style={{ stroke: C.border }} strokeWidth="3" />;
+              return <line key={k} x1={st.x + (st.inset ?? 14)} x2={st.x + st.w - (st.inset ?? 14)} y1={y} y2={y} style={{ stroke: C.border }} strokeWidth={st.inset ? 2 : 3} />;
             })}
             {st.label && st.outdoor && text(st.x + st.w / 2, st.y - 14, st.label, 24)}
             {st.label && !st.outdoor && (
@@ -265,7 +266,7 @@ function SeatMap({ layout, labels, mineAt, selected, onPick }) {
           const fill = isMine ? MINE : hasFriends ? GOLD : t.tresen ? C.track : C.card;
           return (
             <rect
-              key={t.id} x={t.x} y={t.y} width={t.w} height={t.h} rx={Math.min(10, t.h / 3)}
+              key={t.id} x={t.x} y={t.y} width={t.w} height={t.h} rx={t.round ? t.w / 2 : Math.min(10, t.h / 3)}
               style={{ fill, stroke: isMine ? C.green : hasFriends ? "#B8860B" : C.border }}
               strokeWidth={isMine || hasFriends ? 5 : 3} transform={spin(t)}
             />
@@ -273,7 +274,7 @@ function SeatMap({ layout, labels, mineAt, selected, onPick }) {
         })}
         {selected && (() => {
           const t = layout.tables.find((x) => x.id === selected);
-          return t && <rect x={t.x - 9} y={t.y - 9} width={t.w + 18} height={t.h + 18} rx="14" fill="none" style={{ stroke: C.green }} strokeWidth="8" transform={spin(t)} />;
+          return t && <rect x={t.x - 9} y={t.y - 9} width={t.w + 18} height={t.h + 18} rx={t.round ? t.w / 2 + 9 : 14} fill="none" style={{ stroke: C.green }} strokeWidth="8" transform={spin(t)} />;
         })()}
 
         {/* Namensschilder */}

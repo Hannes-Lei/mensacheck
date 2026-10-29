@@ -39,6 +39,13 @@ function outerBox(t) {
   const w = t.w * c + t.h * sn, h = t.w * sn + t.h * c;
   return { x: t.x + t.w / 2 - w / 2, y: t.y + t.h / 2 - h / 2, w, h };
 }
+// Flächen: normal = Theke/Einbau, "hint" = getönte Ebene, "walk" = Durchgang (kein Essbereich), "solid" = Pfeiler, "out" = kein Mensa-Bereich
+const areaStyle = (a) =>
+  a.tone === "hint" ? { fill: C.hintBg, stroke: "none" }
+  : a.tone === "walk" ? { fill: C.track, opacity: 0.45, stroke: "none" }
+  : a.tone === "solid" ? { fill: C.muted, stroke: "none" }
+  : a.tone === "out" ? { fill: C.bg, stroke: C.border, strokeDasharray: "6 6" }
+  : { fill: C.track, stroke: C.border };
 const spin = (o) => (o.rot ? `rotate(${o.rot} ${o.x + (o.w ?? o.s) / 2} ${o.y + (o.h ?? o.s) / 2})` : undefined);
 
 // ---- Der Grundriss ----------------------------------------------------------
@@ -219,9 +226,8 @@ function SeatMap({ layout, labels, mineAt, selected, onPick }) {
         {layout.areas.map((a, i) => (
           <g key={i}>
             {a.d
-              ? <path d={a.d} style={{ fill: C.track, stroke: C.border }} strokeWidth="3" strokeLinejoin="round" />
-              : <rect x={a.x} y={a.y} width={a.w} height={a.h} rx={a.round ? Math.min(18, a.w / 4) : 4}
-                  style={a.tone === "hint" ? { fill: C.hintBg, stroke: "none" } : { fill: C.track, stroke: C.border }} strokeWidth="3" />}
+              ? <path d={a.d} style={areaStyle(a)} strokeWidth="3" strokeLinejoin="round" />
+              : <rect x={a.x} y={a.y} width={a.w} height={a.h} rx={a.round ? Math.min(18, a.w / 4) : 4} style={areaStyle(a)} strokeWidth="3" />}
             {a.label && (a.angle
               ? <text x={a.lx} y={a.ly} fontSize={a.size} fontWeight="600" textAnchor="middle" letterSpacing="1" style={{ fill: C.faint }} transform={`rotate(${a.angle} ${a.lx} ${a.ly})`}>{a.label}</text>
               : text(a.lx, a.ly, a.label, a.size ?? (a.rotate ? 30 : 24), a.rotate))}
@@ -254,7 +260,7 @@ function SeatMap({ layout, labels, mineAt, selected, onPick }) {
           </g>
         ))}
         {(layout.rails || []).map((r, i) => <rect key={i} x={r.x} y={r.y} width={r.w} height={r.h} rx="4" style={{ fill: C.track, stroke: C.border }} strokeWidth="2" />)}
-        {layout.columns.map((c, i) => <rect key={i} x={c.x} y={c.y} width={c.s} height={c.s} rx="2" style={{ fill: C.muted }} transform={spin(c)} />)}
+        {layout.columns.map((c, i) => <rect key={i} x={c.x} y={c.y} width={c.w ?? c.s} height={c.h ?? c.s} rx={c.rx ?? 2} ry={c.ry ?? c.rx ?? 2} style={{ fill: C.muted }} transform={spin(c)} />)}
         {(layout.labels || []).map((l, i) => (
           <text key={i} x={l.x} y={l.y} fontSize={l.size} fontWeight="700" textAnchor="middle" letterSpacing="1" style={{ fill: C.faint }}
             transform={l.rot ? `rotate(${l.rot} ${l.x} ${l.y})` : undefined}>{l.text}</text>
@@ -317,7 +323,9 @@ function startCanteen(checkins, userId, homeCanteen) {
 
 export function SeatSheet({ onClose, userId, checkins, names, canteens, homeCanteen, reload, showToast }) {
   const [canteenId, setCanteenId] = useState(() => startCanteen(checkins, userId, homeCanteen));
-  const layout = seatLayout(canteenId);
+  const plan = seatLayout(canteenId);
+  const levels = plan ? (plan.levels || [plan]) : [];          // Mensen mit mehreren Ebenen (z.B. Galerie)
+  const [level, setLevel] = useState(0);
   const canteenName = canteens.find((c) => c.id === canteenId)?.name || "Mensa";
   const [selected, setSelected] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -353,6 +361,9 @@ export function SeatSheet({ onClose, userId, checkins, names, canteens, homeCant
   const friends = live.filter((c) => c.user_id !== userId && c.canteen_id === canteenId)
     .sort((a, b) => (a.created_at < b.created_at ? -1 : 1));
   const countIn = (id) => live.filter((c) => c.user_id !== userId && c.canteen_id === id).length;
+  const levelOf = (tid) => Math.max(0, levels.findIndex((l) => l.tables.some((t) => t.id === tid)));
+  useEffect(() => { setLevel(mine?.table_id ? levelOf(mine.table_id) : 0); }, [canteenId, mine?.table_id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const layout = levels[level] || levels[0] || null;
   const labels = useMemo(() => {
     const out = {};
     for (const c of friends) if (c.table_id) (out[c.table_id] ||= []).push(names.get(c.user_id) || "Jemand");
@@ -407,8 +418,24 @@ export function SeatSheet({ onClose, userId, checkins, names, canteens, homeCant
           })}
         </select>
 
+        {levels.length > 1 && (
+          <div style={{ display: "flex", gap: 6 }}>
+            {levels.map((l, i) => {
+              const here = (c) => c.table_id && l.tables.some((t) => t.id === c.table_id);
+              const n = friends.filter(here).length;
+              const me = mine && here(mine);
+              return (
+                <button key={i} type="button" onClick={() => { setLevel(i); setSelected(null); }}
+                  style={{ ...styles.chip, ...(i === level ? styles.chipOn : {}), flex: 1, justifyContent: "center", fontSize: 13 }}>
+                  {l.label}{me ? " · Du" : ""}{n ? ` · 👥 ${n}` : ""}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         {layout ? (
-          <SeatMap key={canteenId} layout={layout} labels={labels} mineAt={mine?.table_id} selected={selected} onPick={pick} />
+          <SeatMap key={canteenId + "-" + level} layout={layout} labels={labels} mineAt={mine?.table_id} selected={selected} onPick={pick} />
         ) : (
           <div style={{ ...styles.empty, padding: "18px 12px" }}>
             <div style={{ fontSize: 34, marginBottom: 6 }}>🍽️</div>

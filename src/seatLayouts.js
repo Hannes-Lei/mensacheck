@@ -169,7 +169,7 @@ export const SEAT_LAYOUTS = {
       { d: "M412.3 247.2 L682.9 395.3 L682.9 669.9 L412.3 669.9 Z", label: "KÜCHE", lx: 547.1, ly: 515.7, rotate: false },
       { d: "M533.1 733.5 L662.5 733.5 L662.5 870.5 L533.1 870.5 Z", label: "CAFETERIA", lx: 597.8, ly: 804.7, rotate: false, size: 18 },
       { d: "M827.4 726.0 L952.8 726.0 L948.2 870.5 L827.4 870.5 Z", label: "WC", lx: 887.8, ly: 804.7, rotate: false, size: 18 },
-      { d: "M676.5 445.6 L704.5 445.6 L704.5 677.5 L676.5 677.5 Z", label: "AUSGABE", lx: 690.5, ly: 561.0, rotate: true, size: 22 },
+      { d: "M676.5 445.6 L704.5 445.6 L704.5 677.5 L676.5 677.5 Z", label: "AUSGABE", lx: 698.6, ly: 561.0, rotate: true, size: 22 },
       { d: "M894.3 488.7 L942.8 488.7 L942.8 663.4 L894.3 663.4 Z" },
       { d: "M565.7 309.8 L630.7 345.3 L623.5 358.4 L558.5 322.9 Z", label: "RÜCKGABE", lx: 594.6, ly: 338.5, size: 11, angle: 28.7 },
       { d: "M427.0 682.0 L501.0 682.0 L501.0 696.5 L427.0 696.5 Z", label: "RÜCKGABE", lx: 464.0, ly: 693.5, size: 11 },
@@ -452,7 +452,7 @@ export const SEAT_LAYOUTS = {
     ],
   },
   // Mensa am Park – nach dem Rettungsplan (EG) + Leitsystem (Galerie), Tische von Hannes (Oktober 2026, vorerst alle 6er) · Foyer/Ausgabe rechts abgeschnitten, Galerie-Gang gekürzt
-  //   Ebene 1 Erdgeschoss: A = Gastraum II, B = Gastraum I, C = Caféteria, D = draußen · Ebene 2 Galerie: G
+  //   Ebene 1 Erdgeschoss: A = Gastraum II, B = Gastraum I, C = Caféteria, D = draußen, T1 = Tresen · Ebene 2 Galerie: G
   63: {
     levels: [
       {
@@ -523,7 +523,6 @@ export const SEAT_LAYOUTS = {
         areas: [
           { d: "M540.8 165.1 L767.5 289.2 L677.6 453.4 L450.9 329.3 Z", tone: "walk" },
           { d: "M64.8 125.6 L218.4 125.6 L218.4 162.4 L140.0 165.6 L80.0 224.0 L64.8 162.4 Z", tone: "out", label: "FAHRRADKELLER", lx: 144.0, ly: 151.2, size: 9 },
-          { d: "M279.2 88.8 L499.2 88.8 L499.2 100.8 L279.2 100.8 Z", label: "TRESEN", lx: 389.2, ly: 98.0, size: 9 },
           { d: "M274.4 104.0 L511.2 104.0 L511.2 125.6 L274.4 125.6 Z", tone: "out" },
           { d: "M320.0 110.4 L433.6 110.4 L433.6 132.0 L320.0 132.0 Z", label: "RÜCKGABE", lx: 376.8, ly: 124.4, size: 9 },
           { d: "M253.6 153.6 L290.4 153.6 L290.4 190.4 L253.6 190.4 Z", label: "FLASCHEN", lx: 272.0, ly: 174.4, size: 7 },
@@ -575,6 +574,7 @@ export const SEAT_LAYOUTS = {
           { x: 601.1, y: 343.2, text: "FOYER · DURCHGANG", size: 12, rot: 28.7 },
           { x: 640.0, y: 405.5, text: "EINGANG →", size: 9, rot: 28.7 },
           { x: 204.0, y: 76.0, text: "↑ GALERIE", size: 8 },
+          { x: 389.2, y: 85.6, text: "TRESEN", size: 8 },
         ],
         tables: [
           { id: "A1", x: 73.4, y: 26.0, w: 35.2, h: 16.0, rot: 90 },
@@ -644,6 +644,7 @@ export const SEAT_LAYOUTS = {
           { id: "D12", x: 271.7, y: 800.6, w: 35.2, h: 16.0, rot: 28.7 },
           { id: "D13", x: 344.0, y: 798.3, w: 35.2, h: 16.0, rot: 28.7 },
           { id: "D14", x: 319.4, y: 831.7, w: 35.2, h: 16.0, rot: 28.7 },
+          { id: "T1", x: 279.2, y: 88.8, w: 220.0, h: 12.0, tresen: true },
         ],
         terrace: { d: "M78.4 236.8 L223.2 645.6 L153.8 670.2 L9.0 261.4 Z M269.6 724.0 L473.6 816.0 L440.0 864.0 L232.0 780.0 Z", label: "", lx: 0, ly: 0 },
       },

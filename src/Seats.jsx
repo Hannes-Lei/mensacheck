@@ -234,7 +234,7 @@ function SeatMap({ layout, labels, mineAt, selected, onPick }) {
           </g>
         ))}
         {layout.walls.map((w, i) => (
-          <path key={i} d={typeof w === "string" ? w : w.d} fill="none" style={{ stroke: C.soft }} strokeWidth={typeof w === "string" ? 5 : w.w} strokeLinecap="round" />
+          <path key={i} d={typeof w === "string" ? w : w.d} fill="none" style={{ stroke: C.soft }} strokeWidth={typeof w === "string" ? 5 : w.w} strokeLinecap="round" strokeDasharray={w.dash} />
         ))}
         {(layout.windows || []).map((d, i) => <path key={i} d={d} fill="none" style={{ stroke: C.cardAlt }} strokeWidth="2.5" />)}
         {(layout.doors || []).map((d, i) => <rect key={i} x={d.x} y={d.y} width={d.w} height={d.h} style={{ fill: C.cardAlt }} />)}

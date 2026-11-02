@@ -398,8 +398,18 @@ export default function TodayTab({
     const [{ data: s }, { data: m }, { data: rated }, { data: arch }] =
       await Promise.all([statsReq, mineReq, ratedReq, archiveReq]);
 
-    setStats(Object.fromEntries((s || []).map((r) => [r.meal_name, r])));
-    setMine(Object.fromEntries((m || []).map((r) => [r.meal_name, r])));
+    // Nach Gericht (dishName) zusammenfassen: korrigiert das Studentenwerk einen
+    // Namen im Laufe des Tages, zählen beide Schreibweisen als ein Gericht.
+    const byDish = {};
+    for (const r of s || []) {
+      const k = dishName(r.meal_name), o = byDish[k];
+      byDish[k] = !o ? r : {
+        ...o, votes: o.votes + r.votes, comments: (o.comments || 0) + (r.comments || 0),
+        avg_stars: (o.avg_stars * o.votes + r.avg_stars * r.votes) / (o.votes + r.votes),
+      };
+    }
+    setStats(byDish);
+    setMine(Object.fromEntries((m || []).map((r) => [dishName(r.meal_name), r])));
     const known = {};
     for (const r of rated || []) known[r.meal_name] ??= r;
     setRatedMeals(known);
@@ -454,10 +464,14 @@ export default function TodayTab({
   }, [loadRatings]);
 
   // 3) Bewerten, Kommentieren, Entfernen
+  // Hast du das Gericht schon unter einer älteren Schreibweise bewertet,
+  // wird diese Bewertung geändert statt eine zweite angelegt.
+  const savedName = (meal) => mine[dishName(meal.name)]?.meal_name || meal.name;
+
   async function saveRating(meal, stars, comment) {
     const { error: err } = await supabase.from("ratings").upsert(
       {
-        user_id: userId, canteen_id: canteenId, meal_date: date, meal_name: meal.name,
+        user_id: userId, canteen_id: canteenId, meal_date: date, meal_name: savedName(meal),
         category: meal.category, price: meal.price, stars, comment: comment || null,
       },
       { onConflict: "user_id,canteen_id,meal_date,meal_name" }
@@ -467,25 +481,27 @@ export default function TodayTab({
   }
 
   async function rate(meal, stars) {
-    const before = mine[meal.name];
-    setMine((p) => ({ ...p, [meal.name]: { ...before, meal_name: meal.name, stars } }));
+    const k = dishName(meal.name);
+    const before = mine[k];
+    setMine((p) => ({ ...p, [k]: { ...before, meal_name: before?.meal_name || meal.name, stars } }));
     const ok = await saveRating(meal, stars, before?.comment);
-    if (!ok) setMine((p) => ({ ...p, [meal.name]: before }));
+    if (!ok) setMine((p) => ({ ...p, [k]: before }));
     else if (!before?.stars) onActivity(); // neue Bewertung -> vielleicht neues Abzeichen
     loadRatings();
   }
 
   async function removeRating(meal) {
-    const before = mine[meal.name];
+    const k = dishName(meal.name);
+    const before = mine[k];
     const hint = before?.comment ? " Dein Kommentar wird dabei auch gelöscht." : "";
     if (!window.confirm(`Deine Bewertung für „${meal.name}" entfernen?${hint}`)) return;
-    setMine((p) => { const n = { ...p }; delete n[meal.name]; return n; });
+    setMine((p) => { const n = { ...p }; delete n[k]; return n; });
     const { error: err } = await supabase.from("ratings").delete()
       .eq("user_id", userId).eq("canteen_id", canteenId)
-      .eq("meal_date", date).eq("meal_name", meal.name);
+      .eq("meal_date", date).eq("meal_name", before?.meal_name || meal.name);
     if (err) {
       showToast(friendlyError(err));
-      setMine((p) => ({ ...p, [meal.name]: before }));
+      setMine((p) => ({ ...p, [k]: before }));
     } else {
       showToast("Bewertung entfernt.");
     }
@@ -493,7 +509,7 @@ export default function TodayTab({
   }
 
   async function comment(meal, text) {
-    const current = mine[meal.name];
+    const current = mine[dishName(meal.name)];
     if (!current?.stars) { showToast("Bitte zuerst Sterne vergeben."); return false; }
     const ok = await saveRating(meal, current.stars, text);
     if (ok) { await loadRatings(); if (text && !current.comment) onActivity(); }
@@ -563,11 +579,12 @@ export default function TodayTab({
     let all = plan;
     if (!isFuture) {
       const list = [...plan];
-      const seen = new Set(plan.map((m) => m.name));
+      // gleiches Gericht in anderer Schreibweise nicht doppelt zeigen (der aktuelle Plan gewinnt)
+      const seen = new Set(plan.map((m) => dishName(m.name)));
       // Nicht mehr gelistete Gerichte hinter ihre Kategorie einsortieren
       const add = (m) => {
-        if (seen.has(m.name)) return;
-        seen.add(m.name);
+        if (seen.has(dishName(m.name))) return;
+        seen.add(dishName(m.name));
         let i = -1;
         list.forEach((x, idx) => { if (x.category === m.category) i = idx; });
         if (i >= 0) list.splice(i + 1, 0, m);
@@ -606,9 +623,9 @@ export default function TodayTab({
 
   const cardProps = (m, compact = false) => ({
     meal: m,
-    stats: stats[m.name],
+    stats: stats[dishName(m.name)],
     total: totalOf(m.name),
-    mine: mine[m.name],
+    mine: mine[dishName(m.name)],
     isFavorite: favorites.has(dishKey(canteenId, m.name)),
     canRate: !!userId,
     isFuture,

@@ -72,12 +72,16 @@ export function shortDate(iso) {
 
 // Vergleichsname eines Gerichts: klein, ohne Anführungszeichen, einfache
 // Leerzeichen. Muss genau zu dish_key() in Supabase (Skript 05) passen.
+// Hängende Wörter am Ende („… auf", „… mit,") zählen nicht – gleiche Regel wie
+// dish_key in Supabase (SQL 15), sonst passen die Bewertungen nicht zusammen.
+const DANGLING = /(?:[\s,;:–-]+(?:auf|mit|an|und|dazu|in|im|vom|von|aus|zu|nach|sowie|oder))*[\s,;:–-]*$/;
 export function dishName(mealName) {
   return String(mealName || "")
     .replace(/["„“”'`´]/g, "")
     .toLowerCase()
     .replace(/\s+/g, " ")
-    .trim();
+    .trim()
+    .replace(DANGLING, "");
 }
 
 // Schlüssel für ein Gericht über alle Tage hinweg (Favoriten, Ranglisten)

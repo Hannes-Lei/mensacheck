@@ -65,6 +65,7 @@ export function Interactions({ rating, userId, username, needLogin, showToast, n
   const [sending, setSending] = useState(false);
   const [showAll, setShowAll] = useState(false);
   const [pop, setPop] = useState(0); // Herz-Animation
+  const [report, setReport] = useState(null); // { rating_id } oder { reply_id }
 
   // Neue Daten von außen übernehmen (z.B. nach dem Neuladen)
   useEffect(() => { setReactions(rating.reactions || []); }, [rating.reactions]);
@@ -184,6 +185,11 @@ export function Interactions({ rating, userId, username, needLogin, showToast, n
         >
           ↩ Antworten
         </button>
+        {userId && rating.user_id !== userId && (rating.comment || "").trim() && (
+          <button type="button" style={ist.more} aria-label="Mehr" title="Melden" onClick={() => setReport({ rating_id: rating.id })}>
+            ⋯
+          </button>
+        )}
       </div>
 
       {picker && (
@@ -220,6 +226,11 @@ export function Interactions({ rating, userId, username, needLogin, showToast, n
                   Löschen
                 </button>
               )}
+              {userId && r.user_id !== userId && (
+                <button type="button" onClick={() => setReport({ reply_id: r.id })} style={{ ...ist.tinyLink, textDecoration: "none" }} aria-label="Antwort melden">
+                  ⋯
+                </button>
+              )}
             </div>
           ))}
         </div>
@@ -240,6 +251,66 @@ export function Interactions({ rating, userId, username, needLogin, showToast, n
           </button>
         </form>
       )}
+
+      {report && <ReportSheet target={report} onClose={() => setReport(null)} showToast={showToast} />}
+    </div>
+  );
+}
+
+// ============================================================================
+// Melden – bewusst unauffällig: nur über das kleine "⋯" erreichbar.
+// Gemeldetes sieht nur ein Moderator (Bereich Moderation im Tab Ich).
+// ============================================================================
+const REASONS = [
+  ["beleidigend", "Beleidigend"],
+  ["spam", "Spam / Werbung"],
+  ["falsch", "Falsch oder unpassend"],
+  ["sonstiges", "Sonstiges"],
+];
+
+function ReportSheet({ target, onClose, showToast }) {
+  const [reason, setReason] = useState(null);
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function send() {
+    if (!reason || busy) return;
+    setBusy(true);
+    const { error } = await supabase.from("reports").insert({ ...target, reason, note: note.trim() || null });
+    setBusy(false);
+    if (error && error.code !== "23505") return showToast(friendlyError(error)); // 23505 = schon gemeldet
+    showToast(error ? "Hast du schon gemeldet – danke!" : "Danke, wir schauen es uns an.");
+    onClose();
+  }
+
+  return (
+    <div style={{ ...styles.overlay, zIndex: 30 }} onClick={onClose}>
+      <div style={styles.sheet} onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Melden">
+        <div style={styles.sheetHead}>
+          <h2 style={{ margin: 0, fontSize: 18 }}>{target.reply_id ? "Antwort melden" : "Kommentar melden"}</h2>
+          <button type="button" onClick={onClose} style={styles.closeBtn} aria-label="Schließen">×</button>
+        </div>
+        <p style={{ fontSize: 13, color: C.muted, margin: "4px 0 12px", lineHeight: 1.5 }}>
+          Was stimmt damit nicht? Die Person erfährt nicht, wer gemeldet hat.
+        </p>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {REASONS.map(([id, label]) => (
+            <button key={id} type="button" onClick={() => setReason(id)} aria-pressed={reason === id}
+              style={{ ...ist.reason, ...(reason === id ? ist.reasonOn : {}) }}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <textarea
+          value={note} onChange={(e) => setNote(e.target.value)} maxLength={300} rows={2}
+          placeholder="Optional: kurz erklären …" aria-label="Anmerkung"
+          style={{ ...styles.input, marginTop: 10, resize: "none", fontSize: 15 }}
+        />
+        <button type="button" onClick={send} disabled={!reason || busy}
+          style={{ ...styles.primaryBtn, width: "100%", marginTop: 12, opacity: reason ? 1 : 0.5 }}>
+          {busy ? "…" : "Melden"}
+        </button>
+      </div>
     </div>
   );
 }
@@ -290,6 +361,15 @@ const ist = {
     marginTop: 8, paddingLeft: 10, borderLeft: `2px solid ${C.line}`,
     display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-start",
   },
+  more: {
+    marginLeft: "auto", padding: "0 6px", minHeight: 28, background: "none", border: "none",
+    color: C.faint, fontSize: 18, lineHeight: 1, cursor: "pointer", opacity: 0.6,
+  },
+  reason: {
+    padding: "7px 12px", borderRadius: 16, border: `1px solid ${C.line}`, background: C.card,
+    color: C.text, fontSize: 14, cursor: "pointer",
+  },
+  reasonOn: { border: `1px solid ${C.green}`, background: C.hintBg, fontWeight: 700 },
   tinyLink: {
     marginLeft: 6, padding: 0, background: "none", border: "none", color: C.faint,
     fontSize: 12, cursor: "pointer", textDecoration: "underline",

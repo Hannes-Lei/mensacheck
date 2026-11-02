@@ -73,6 +73,8 @@ export default function MensaCheck() {
   // Design anwenden und merken
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
+    // Browserleiste (z.B. Safari auf dem iPad) in der Farbe des App-Hintergrunds, damit kein farbiger Streifen oben entsteht
+    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", theme === "dark" ? "#1C1915" : "#FFF4DF");
     try { localStorage.setItem(THEME_KEY, theme); } catch { /* egal */ }
   }, [theme]);
 
@@ -208,11 +210,11 @@ export default function MensaCheck() {
   const checkBadges = useCallback(async (silent = false) => {
     if (!userId) return;
     const { data } = await supabase.from("ratings")
-      .select("canteen_id, meal_date, comment").eq("user_id", userId).limit(5000);
+      .select("canteen_id, meal_date, meal_name, stars, comment").eq("user_id", userId).limit(5000);
     const stats = computeStats(data || []);
     const earned = BADGES.filter((b) => stats[b.metric] >= b.goal).map((b) => b.id);
 
-    const key = `mensacheck-abzeichen-${userId}`;
+    const key = `mensacheck-abzeichen2-${userId}`;
     let known = null;
     try { known = JSON.parse(localStorage.getItem(key)); } catch { /* egal */ }
     try { localStorage.setItem(key, JSON.stringify(earned)); } catch { /* egal */ }
@@ -222,12 +224,13 @@ export default function MensaCheck() {
     if (fresh.length) setCelebrate((q) => [...q, ...fresh]);
   }, [userId]);
 
-  // Beim Anmelden den aktuellen Stand merken. Ganz neue Konten haben noch
+  // Beim Anmelden den aktuellen Stand merken ("abzeichen2": neue Abzeichen von
+  // Nov. 2026 werden still übernommen statt alle auf einmal gefeiert). Ganz neue Konten haben noch
   // keine Abzeichen – so wird schon das erste ("Erster Bissen") gefeiert.
   useEffect(() => {
     if (!userId) return;
     let stored = null;
-    try { stored = localStorage.getItem(`mensacheck-abzeichen-${userId}`); } catch { /* egal */ }
+    try { stored = localStorage.getItem(`mensacheck-abzeichen2-${userId}`); } catch { /* egal */ }
     if (stored === null) checkBadges(true);
   }, [userId, checkBadges]);
 

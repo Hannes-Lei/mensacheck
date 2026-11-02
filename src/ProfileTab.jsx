@@ -6,6 +6,8 @@ import Moderation from "./Moderation.jsx";
 import { AccountSheet } from "./Legal.jsx";
 import { WrappedCard } from "./Wrapped.jsx";
 
+const BADGES_SHOWN = 6; // so viele Abzeichen sind ohne Aufklappen zu sehen
+
 // Foto quadratisch zuschneiden und klein rechnen (256 × 256 Pixel, JPG).
 // So bleibt jedes Profilbild nur ca. 20–40 KB groß.
 async function toSquareJpeg(file, size = 256) {
@@ -172,6 +174,7 @@ export default function ProfileTab({
   const [dishAvg, setDishAvg] = useState({});
   const [listOpen, setListOpen] = useState(null); // "all" | "comments"
   const [showAccount, setShowAccount] = useState(false);
+  const [allBadges, setAllBadges] = useState(false);
 
   useEffect(() => {
     if (!active || !userId) return;
@@ -227,6 +230,8 @@ export default function ProfileTab({
 
   const stats = computeStats(ratings || []);
   const earned = BADGES.filter((b) => stats[b.metric] >= b.goal).length;
+  const progress = (b) => Math.min(1, (stats[b.metric] || 0) / b.goal);
+  const badgeOrder = [...BADGES].sort((a, b) => (progress(b) === 1) - (progress(a) === 1) || (progress(a) === 1 ? 0 : progress(b) - progress(a)));
 
 
   return (
@@ -250,10 +255,10 @@ export default function ProfileTab({
 
       <WrappedCard ratings={ratings} userId={userId} friends={friends} canteenName={canteenName} />
 
-      {/* Abzeichen */}
+      {/* Abzeichen: erst die geschafften, dann die, die am nächsten dran sind */}
       <h3 style={styles.h3}>Abzeichen · {earned} von {BADGES.length}</h3>
       <div style={styles.badgeGrid}>
-        {BADGES.map((b) => {
+        {badgeOrder.slice(0, allBadges ? undefined : BADGES_SHOWN).map((b) => {
           const have = stats[b.metric];
           const done = have >= b.goal;
           return (
@@ -266,13 +271,18 @@ export default function ProfileTab({
                   <div style={styles.progressTrack}>
                     <div style={{ ...styles.progressFill, width: `${Math.min(100, (have / b.goal) * 100)}%` }} />
                   </div>
-                  <div style={{ fontSize: 11, color: C.faint, marginTop: 4 }}>{have} / {b.goal}</div>
+                  <div style={{ fontSize: 11, color: C.faint, marginTop: 4 }}>{Math.min(have, b.goal)} / {b.goal}</div>
                 </>
               )}
             </div>
           );
         })}
       </div>
+      {BADGES.length > BADGES_SHOWN && (
+        <button type="button" style={{ ...styles.ghostBtn, width: "100%", marginTop: 8 }} onClick={() => setAllBadges((v) => !v)}>
+          {allBadges ? "Weniger anzeigen" : `Alle ${BADGES.length} Abzeichen ansehen`}
+        </button>
+      )}
 
       {/* Lieblingsgerichte */}
       <h3 style={styles.h3}>❤️ Lieblingsgerichte</h3>
@@ -329,7 +339,7 @@ export default function ProfileTab({
 
       <DesignPicker theme={theme} onThemeChange={onThemeChange} />
 
-      <Moderation active={active} userId={userId} showToast={showToast} />
+      <Moderation active={active} userId={userId} showToast={showToast} canteenName={canteenName} />
 
       {/* ganz unten, bewusst unauffällig */}
       <div style={{ textAlign: "center", marginTop: 28 }}>

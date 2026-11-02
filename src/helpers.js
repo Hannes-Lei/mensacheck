@@ -102,23 +102,73 @@ export function friendlyError(err) {
 // ---- Abzeichen -------------------------------------------------------------
 // Werden aus deinen Bewertungen berechnet, nichts davon wird extra gespeichert.
 export const BADGES = [
-  { id: "first",    icon: "🍽️", name: "Erster Bissen",     text: "Deine erste Bewertung",           metric: "ratings",  goal: 1 },
-  { id: "regular",  icon: "🥄", name: "Stammgast",         text: "10 Bewertungen",                  metric: "ratings",  goal: 10 },
-  { id: "critic",   icon: "🧐", name: "Mensa-Kritiker",    text: "50 Bewertungen",                  metric: "ratings",  goal: 50 },
-  { id: "legend",   icon: "👑", name: "Mensa-Legende",     text: "100 Bewertungen",                 metric: "ratings",  goal: 100 },
-  { id: "writer",   icon: "✍️", name: "Wortgewandt",       text: "10 Kommentare",                   metric: "comments", goal: 10 },
-  { id: "explorer", icon: "🧭", name: "Leipzig-Entdecker", text: "In 3 verschiedenen Mensen bewertet", metric: "canteens", goal: 3 },
-  { id: "allstar",  icon: "🗺️", name: "Mensa-Weltreise",   text: "In 5 verschiedenen Mensen bewertet", metric: "canteens", goal: 5 },
-  { id: "loyal",    icon: "📅", name: "Treue Seele",       text: "An 10 verschiedenen Tagen bewertet",  metric: "days",     goal: 10 },
+  { id: "first",    icon: "🍽️", name: "Erster Bissen",     text: "Deine erste Bewertung",              metric: "ratings",   goal: 1 },
+  { id: "regular",  icon: "🥄", name: "Stammgast",         text: "10 Bewertungen",                     metric: "ratings",   goal: 10 },
+  { id: "explorer", icon: "🧭", name: "Leipzig-Entdecker", text: "In 3 verschiedenen Mensen bewertet", metric: "canteens",  goal: 3 },
+  { id: "writer",   icon: "✍️", name: "Wortgewandt",       text: "10 Kommentare",                      metric: "comments",  goal: 10 },
+  { id: "loyal",    icon: "📅", name: "Treue Seele",       text: "An 10 verschiedenen Tagen bewertet", metric: "days",      goal: 10 },
+  { id: "fullweek", icon: "🗓️", name: "Volle Woche",       text: "Montag bis Freitag in einer Woche",  metric: "fullweeks", goal: 1 },
+  { id: "streak",   icon: "🔥", name: "Serientäter",       text: "5 Mensatage am Stück bewertet",      metric: "streak",    goal: 5 },
+  { id: "green",    icon: "🥗", name: "Grüner Teller",     text: "10 Gerichte ohne Fleisch",           metric: "meatless",  goal: 10 },
+  { id: "pasta",    icon: "🍝", name: "Pasta-Profi",       text: "10 Nudel- oder Pizzagerichte",       metric: "pasta",     goal: 10 },
+  { id: "starry",   icon: "🌟", name: "Sternenregen",      text: "10-mal volle 5 Sterne vergeben",     metric: "fivestars", goal: 10 },
+  { id: "honest",   icon: "🧂", name: "Ehrliche Haut",     text: "5-mal 2 Sterne oder weniger",        metric: "lowstars",  goal: 5 },
+  { id: "allstar",  icon: "🗺️", name: "Mensa-Weltreise",   text: "In 5 verschiedenen Mensen bewertet", metric: "canteens",  goal: 5 },
+  { id: "complete", icon: "🏆", name: "Leipzig komplett",  text: "In allen 7 Mensen bewertet",         metric: "canteens",  goal: 7 },
+  { id: "variety",  icon: "🍱", name: "Allesprobierer",    text: "30 verschiedene Gerichte",           metric: "dishes",    goal: 30 },
+  { id: "critic",   icon: "🧐", name: "Mensa-Kritiker",    text: "50 Bewertungen",                     metric: "ratings",   goal: 50 },
+  { id: "columnist",icon: "📰", name: "Mensa-Kolumnist",   text: "50 Kommentare",                      metric: "comments",  goal: 50 },
+  { id: "veteran",  icon: "🎖️", name: "Mensa-Veteran",     text: "An 50 verschiedenen Tagen bewertet", metric: "days",      goal: 50 },
+  { id: "legend",   icon: "👑", name: "Mensa-Legende",     text: "100 Bewertungen",                    metric: "ratings",   goal: 100 },
 ];
 
+// Braucht von jeder Bewertung: canteen_id, meal_date, meal_name, stars, comment
 export function computeStats(ratings) {
+  const dates = [...new Set(ratings.map((r) => r.meal_date).filter(Boolean))].sort();
+  const name = (r) => r.meal_name || "";
   return {
     ratings: ratings.length,
     comments: ratings.filter((r) => (r.comment || "").trim()).length,
     canteens: new Set(ratings.map((r) => r.canteen_id)).size,
-    days: new Set(ratings.map((r) => r.meal_date)).size,
+    days: dates.length,
+    dishes: new Set(ratings.map((r) => name(r).trim().toLowerCase()).filter(Boolean)).size,
+    meatless: ratings.filter((r) => name(r) && (!MEAT_WORDS.test(name(r)) || MEAT_SUBST.test(name(r)))).length,
+    pasta: ratings.filter((r) => PASTA_DISH.test(name(r))).length,
+    fivestars: ratings.filter((r) => Number(r.stars) >= 5).length,
+    lowstars: ratings.filter((r) => r.stars != null && Number(r.stars) <= 2).length,
+    streak: longestStreak(dates),
+    fullweeks: fullWeeks(dates),
   };
+}
+
+const PASTA_DISH = /pasta|nudel|spaghetti|penne|fusilli|tagliatelle|makkaroni|maccheroni|rigatoni|lasagne|tortellini|ravioli|gnocchi|spätzle|pizza/i;
+const dayNo = (d) => Math.round(Date.parse(d + "T12:00:00Z") / 86400000); // Tage seit 1970
+const weekday = (d) => new Date(d + "T12:00:00Z").getUTCDay();             // 0 = Sonntag
+
+// Längste Serie aufeinanderfolgender Mensatage (Freitag → Montag zählt als lückenlos)
+function longestStreak(dates) {
+  let best = 0, run = 0, prev = null;
+  for (const d of dates) {
+    if (weekday(d) === 0 || weekday(d) === 6) continue;
+    const n = dayNo(d);
+    const gap = prev === null ? null : n - prev;
+    run = gap === 1 || (gap === 3 && weekday(d) === 1) ? run + 1 : 1;
+    best = Math.max(best, run);
+    prev = n;
+  }
+  return best;
+}
+
+// Wochen, in denen von Montag bis Freitag jeden Tag bewertet wurde
+function fullWeeks(dates) {
+  const weeks = new Map();
+  for (const d of dates) {
+    const wd = weekday(d);
+    if (wd === 0 || wd === 6) continue;
+    const monday = dayNo(d) - (wd - 1);
+    weeks.set(monday, (weeks.get(monday) || 0) + 1);
+  }
+  return [...weeks.values()].filter((n) => n >= 5).length;
 }
 
 // Am Pastateller nur Soßen zeigen, nicht Nudelsorte oder Käse
@@ -150,7 +200,7 @@ export function cleanSidesAndAllergens(sides = [], allergens = []) {
 
 // Reihenfolge bei "Heute": 0 Fleisch/Fisch · 1 vegan/vegetarisch · 2 Pasta/Pizza · 3 der Rest
 const MEAT_WORDS = /fleisch|hack|schwein|rind|kalb|lamm|wild|geflügel|hähnchen|huhn|chicken|pute|ente|schinken|speck|bacon|salami|wurst|würst|chorizo|kassler|leberkäse|frikadelle|bulette|cevapcici|döner|bolognese|fisch|lachs|scholle|kabeljau|forelle|hering|matjes|garnele|shrimp|calamari|muschel|thunfisch|seelachs|schnitzel|gulasch|roulade|braten|steak|geschnetzeltes/i;
-const MEAT_SUBST = /tofu|soja|seitan|vegetar|veggie|planted|pflanz|fleischlos|like /i;
+const MEAT_SUBST = /tofu|soja|seitan|vegan|vegetar|veggie|planted|pflanz|fleischlos|like /i;
 export function mealGroup(m) {
   const cat = m.category || "";
   if (/pasta|pizza/i.test(cat)) return 2;

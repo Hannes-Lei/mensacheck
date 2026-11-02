@@ -75,9 +75,9 @@ function GroupForms({ onCreated, onJoined, showToast }) {
 function GroupInfo({ group, members, userId, onLeft, showToast, seatRow }) {
   async function invite() {
     const url = `${window.location.origin}/?gruppe=${group.code}`;
-    const text = `Komm in meine MensaCheck-Gruppe „${group.name}" 🍽️ Dann sehen wir, was wir in der Mensa gegessen haben.`;
+    const text = `Komm in meine Schmausi-Gruppe „${group.name}" 🍽️ Dann sehen wir, was wir in der Mensa gegessen haben.`;
     if (navigator.share) {
-      try { await navigator.share({ title: "MensaCheck", text, url }); } catch { /* abgebrochen */ }
+      try { await navigator.share({ title: "Schmausi", text, url }); } catch { /* abgebrochen */ }
       return;
     }
     try {
@@ -185,17 +185,20 @@ function FeedItem({ item, canteenName, ...thread }) {
           <div style={{ color: C.muted, fontSize: 12 }}>{canteenName} · {timeAgo(item.created_at)}</div>
         </div>
       </div>
-      <div style={{ marginTop: 10, fontSize: 16, fontWeight: 700, lineHeight: 1.3 }}>{item.meal_name}</div>
-      <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
-        <StarLine value={item.stars} size={17} />
-        <strong style={{ fontSize: 14 }}>{formatStars(item.stars)}</strong>
-      </div>
-      {item.comment && (
-        <p style={{ ...styles.comment, margin: "10px 0 0", lineHeight: 1.45, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-          <LongText text={item.comment} before="„" after={'"'} />
-        </p>
-      )}
-      <Interactions rating={item} {...thread} />
+      <Interactions rating={item} {...thread} bubble={
+        <>
+          <div style={{ marginTop: 10, fontSize: 16, fontWeight: 700, lineHeight: 1.3 }}>{item.meal_name}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
+            <StarLine value={item.stars} size={17} />
+            <strong style={{ fontSize: 14 }}>{formatStars(item.stars)}</strong>
+          </div>
+          {item.comment && (
+            <p style={{ ...styles.comment, margin: "10px 0 0", lineHeight: 1.45, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+              <LongText text={item.comment} before="„" after={'"'} />
+            </p>
+          )}
+        </>
+      } />
     </article>
   );
 }

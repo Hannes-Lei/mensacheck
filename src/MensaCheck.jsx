@@ -11,7 +11,7 @@ import FriendsTab from "./FriendsTab.jsx";
 import Celebration from "./Celebration.jsx";
 
 // ============================================================================
-// MensaCheck Leipzig – Version 6: Freundesgruppen, Reaktionen, halbe Sterne
+// Schmausi (früher MensaCheck) Leipzig – Version 6: Freundesgruppen, Reaktionen, halbe Sterne
 // ----------------------------------------------------------------------------
 // Diese Datei ist der "Rahmen" der App: Kopfzeile, Navigation unten,
 // Anmeldung und alles, was mehrere Ansichten gemeinsam brauchen.
@@ -293,7 +293,7 @@ export default function MensaCheck() {
         <div style={styles.topRow}>
           <div style={styles.brandRow}>
             <span style={styles.logo}>◆</span>
-            <h1 style={styles.title}>MensaCheck</h1>
+            <h1 style={styles.title}>Schmausi</h1>
             <span style={styles.city}>Leipzig</span>
           </div>
           {userId ? (
@@ -355,6 +355,7 @@ export default function MensaCheck() {
           onToggleFavorite={toggleFavorite}
           needLogin={() => setShowAuth(true)}
           onSignOut={() => { supabase.auth.signOut(); setTab("today"); }}
+          friends={friends}
           onDeleted={() => { setTab("today"); window.scrollTo({ top: 0 }); showToast("Dein Konto wurde gelöscht. Mach's gut! 👋"); }}
           theme={theme}
           onThemeChange={setTheme}
@@ -367,7 +368,7 @@ export default function MensaCheck() {
 
       <footer style={styles.footer}>
         Speiseplan: OpenMensa / Studentenwerk Leipzig · Preise für Studierende, ohne Gewähr.<br />
-        Testversion von MensaCheck.<br />
+        Testversion von Schmausi.<br />
         <LegalLinks onOpen={setLegal} />
       </footer>
 

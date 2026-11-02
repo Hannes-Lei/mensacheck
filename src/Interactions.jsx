@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from "./supabase.js";
 import { timeAgo, friendlyError } from "./helpers.js";
 import { StarLine, formatStars, Avatar, styles, C } from "./ui.jsx";
@@ -45,7 +45,18 @@ export const THREAD_SELECT =
 
 const REPLIES_SHOWN = 3;
 
-export function Interactions({ rating, userId, username, needLogin, showToast, noTextLimit = false }) {
+// Doppeltipp auf Kommentar/Beitrag = ❤️ (wie bei Instagram). Nur vergeben, nie wegnehmen.
+function useDoubleTap(onDouble) {
+  const last = useRef(0);
+  return (e) => {
+    if (e.target.closest("button, a, input, textarea")) return;
+    const now = Date.now();
+    if (now - last.current < 320) { last.current = 0; onDouble(); }
+    else last.current = now;
+  };
+}
+
+export function Interactions({ rating, userId, username, needLogin, showToast, noTextLimit = false, bubble = null }) {
   const [reactions, setReactions] = useState(rating.reactions || []);
   const [replies, setReplies] = useState(rating.replies || []);
   const [picker, setPicker] = useState(false);
@@ -53,6 +64,7 @@ export function Interactions({ rating, userId, username, needLogin, showToast, n
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [showAll, setShowAll] = useState(false);
+  const [pop, setPop] = useState(0); // Herz-Animation
 
   // Neue Daten von außen übernehmen (z.B. nach dem Neuladen)
   useEffect(() => { setReactions(rating.reactions || []); }, [rating.reactions]);
@@ -100,6 +112,14 @@ export function Interactions({ rating, userId, username, needLogin, showToast, n
     if (error) { setReactions(before); showToast(friendlyError(error)); }
   }
 
+  const onTap = useDoubleTap(() => {
+    if (!userId) return needLogin();
+    setPop((n) => n + 1);
+    if (navigator.vibrate) navigator.vibrate(12);
+    const mine = reactions.find((r) => r.user_id === userId);
+    if (mine?.emoji !== "❤️") react("❤️");
+  });
+
   async function sendReply() {
     const body = draft.trim();
     if (!body || sending) return;
@@ -129,6 +149,15 @@ export function Interactions({ rating, userId, username, needLogin, showToast, n
 
   return (
     <div>
+      {bubble && (
+        <div onClick={onTap} style={{ position: "relative", touchAction: "manipulation", userSelect: "none", WebkitUserSelect: "none" }}>
+          {bubble}
+          {pop > 0 && (
+            <span key={pop} aria-hidden="true" className="heart-pop"
+              style={{ position: "absolute", left: "50%", top: "50%", fontSize: 54, pointerEvents: "none" }}>❤️</span>
+          )}
+        </div>
+      )}
       {/* Emojis + Knöpfe */}
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, marginTop: 8 }}>
         {groups.map((g) => (
@@ -220,8 +249,7 @@ export function CommentItem({ item, userId, username, friends, needLogin, showTo
   const isMe = item.user_id === userId;
   const isFriend = !isMe && friends?.has(item.user_id);
   const name = isMe ? "Du" : item.profiles?.username || "Jemand";
-  return (
-    <li style={{ listStyle: "none" }}>
+  const bubble = (
       <div style={styles.comment}>
         <div style={{ ...styles.commentHead, alignItems: "center" }}>
           <Avatar name={item.profiles?.username || "?"} path={item.profiles?.avatar_path} size={22} />
@@ -231,7 +259,10 @@ export function CommentItem({ item, userId, username, friends, needLogin, showTo
         </div>
         <p style={{ margin: "4px 0 0", lineHeight: 1.4, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}><LongText text={item.comment} /></p>
       </div>
-      <Interactions rating={item} userId={userId} username={username} needLogin={needLogin} showToast={showToast} noTextLimit={noTextLimit} />
+  );
+  return (
+    <li style={{ listStyle: "none" }}>
+      <Interactions rating={item} userId={userId} username={username} needLogin={needLogin} showToast={showToast} noTextLimit={noTextLimit} bubble={bubble} />
     </li>
   );
 }

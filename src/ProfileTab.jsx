@@ -4,6 +4,7 @@ import { BADGES, computeStats, dishKey, formatAvg, formatDate, friendlyError } f
 import { StarLine, Chip, Avatar, styles, C } from "./ui.jsx";
 import Moderation from "./Moderation.jsx";
 import { AccountSheet } from "./Legal.jsx";
+import { WrappedCard } from "./Wrapped.jsx";
 
 // Foto quadratisch zuschneiden und klein rechnen (256 × 256 Pixel, JPG).
 // So bleibt jedes Profilbild nur ca. 20–40 KB groß.
@@ -99,16 +100,77 @@ function DesignPicker({ theme, onThemeChange }) {
   );
 }
 
+// Eine Zeile "Meine Bewertung"
+function RatingRow({ r, canteenName, onRemove }) {
+  return (
+    <div style={{ ...styles.rankRow, alignItems: "flex-start" }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={styles.rankName}>{r.meal_name}</div>
+        <div style={styles.rankMeta}>{canteenName(r.canteen_id)} · {formatDate(r.meal_date)}</div>
+        {r.comment && <div style={{ fontSize: 13, color: C.soft, marginTop: 6, lineHeight: 1.4 }}>„{r.comment}"</div>}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+        <StarLine value={r.stars} size={14} />
+        {onRemove && (
+          <button
+            type="button" onClick={() => onRemove(r)}
+            style={{ ...styles.smallAction, color: C.muted, fontSize: 12 }}
+            aria-label={`Bewertung für ${r.meal_name} entfernen`}
+          >
+            Entfernen
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Alle eigenen Bewertungen bzw. nur die mit Kommentar – eigenes Vollbild-Fenster, nach Monaten gruppiert
+const MONTH_NAMES = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
+function MyRatingsSheet({ ratings, initial, canteenName, onRemove, onClose }) {
+  const [filter, setFilter] = useState(initial);
+  const list = filter === "comments" ? ratings.filter((r) => r.comment) : ratings;
+  const months = [];
+  for (const r of list) {
+    const key = r.meal_date.slice(0, 7);
+    if (!months.length || months[months.length - 1].key !== key) months.push({ key, items: [] });
+    months[months.length - 1].items.push(r);
+  }
+  const label = (key) => `${MONTH_NAMES[Number(key.slice(5, 7)) - 1]} ${key.slice(0, 4)}`;
+  return (
+    <div style={{ ...styles.overlay, zIndex: 30, alignItems: "stretch" }} onClick={onClose}>
+      <div role="dialog" aria-label="Meine Bewertungen" onClick={(e) => e.stopPropagation()}
+        style={{ ...styles.sheet, borderRadius: 0, height: "100%", overflowY: "auto", paddingBottom: 40 }}>
+        <div style={styles.sheetHead}>
+          <h2 style={{ margin: 0, fontSize: 22 }}>{filter === "comments" ? "Meine Kommentare" : "Meine Bewertungen"}</h2>
+          <button type="button" onClick={onClose} style={styles.closeBtn} aria-label="Schließen">×</button>
+        </div>
+        <div style={{ ...styles.chipRow, margin: "6px 0 4px" }}>
+          <Chip active={filter === "all"} onClick={() => setFilter("all")}>Alle · {ratings.length}</Chip>
+          <Chip active={filter === "comments"} onClick={() => setFilter("comments")}>Mit Kommentar · {ratings.filter((r) => r.comment).length}</Chip>
+        </div>
+        {months.map((m) => (
+          <div key={m.key}>
+            <h3 style={{ ...styles.h3, fontSize: 15, margin: "16px 0 6px" }}>{label(m.key)} · {m.items.length}</h3>
+            {m.items.map((r) => <RatingRow key={r.id} r={r} canteenName={canteenName} onRemove={onRemove} />)}
+          </div>
+        ))}
+        {list.length === 0 && <div style={{ ...styles.empty, padding: "12px 8px" }}>Noch nichts hier.</div>}
+      </div>
+    </div>
+  );
+}
+
 // ============================================================================
 // Ansicht "Ich": Statistik, Abzeichen, Lieblingsgerichte, eigene Bewertungen
 // ============================================================================
 export default function ProfileTab({
-  userId, username, canteens, favoritesList, onToggleFavorite, needLogin, onSignOut, onDeleted = () => {},
+  userId, username, canteens, favoritesList, onToggleFavorite, needLogin, onSignOut, onDeleted = () => {}, friends = new Map(),
   theme, onThemeChange, active, avatarPath = null, onAvatarChange = () => {}, showToast = () => {},
 }) {
   const [ratings, setRatings] = useState(null);
   const [dishAvg, setDishAvg] = useState({});
-  const [showAll, setShowAll] = useState(false);
+  const [listOpen, setListOpen] = useState(null); // "all" | "comments"
   const [showAccount, setShowAccount] = useState(false);
 
   useEffect(() => {
@@ -165,7 +227,7 @@ export default function ProfileTab({
 
   const stats = computeStats(ratings || []);
   const earned = BADGES.filter((b) => stats[b.metric] >= b.goal).length;
-  const visibleRatings = showAll ? ratings || [] : (ratings || []).slice(0, 15);
+
 
   return (
     <main style={styles.main}>
@@ -181,10 +243,12 @@ export default function ProfileTab({
 
       {/* Zahlen */}
       <div style={styles.statGrid}>
-        <div style={styles.statBox}><div style={styles.statNum}>{stats.ratings}</div><div style={styles.statLabel}>Bewertungen</div></div>
-        <div style={styles.statBox}><div style={styles.statNum}>{stats.comments}</div><div style={styles.statLabel}>Kommentare</div></div>
+        <button type="button" onClick={() => stats.ratings && setListOpen("all")} style={{ ...styles.statBox, cursor: "pointer", font: "inherit", color: "inherit" }}><div style={styles.statNum}>{stats.ratings}</div><div style={styles.statLabel}>Bewertungen</div></button>
+        <button type="button" onClick={() => stats.comments && setListOpen("comments")} style={{ ...styles.statBox, cursor: "pointer", font: "inherit", color: "inherit" }}><div style={styles.statNum}>{stats.comments}</div><div style={styles.statLabel}>Kommentare</div></button>
         <div style={styles.statBox}><div style={styles.statNum}>{stats.canteens}</div><div style={styles.statLabel}>Mensen</div></div>
       </div>
+
+      <WrappedCard ratings={ratings} userId={userId} friends={friends} canteenName={canteenName} />
 
       {/* Abzeichen */}
       <h3 style={styles.h3}>Abzeichen · {earned} von {BADGES.length}</h3>
@@ -239,35 +303,28 @@ export default function ProfileTab({
         })
       )}
 
-      {/* Eigene Bewertungen */}
+      {/* Eigene Bewertungen: nur kurz, der Rest in einem eigenen Fenster */}
       <h3 style={styles.h3}>Meine Bewertungen</h3>
       {ratings === null && <div style={styles.notice}>Wird geladen…</div>}
       {ratings?.length === 0 && (
         <div style={{ ...styles.empty, padding: "12px 8px" }}>Du hast noch nichts bewertet. Los geht's im Tab „Heute".</div>
       )}
-      {visibleRatings.map((r) => (
-        <div key={r.id} style={{ ...styles.rankRow, alignItems: "flex-start" }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={styles.rankName}>{r.meal_name}</div>
-            <div style={styles.rankMeta}>{canteenName(r.canteen_id)} · {formatDate(r.meal_date)}</div>
-            {r.comment && <div style={{ fontSize: 13, color: C.soft, marginTop: 6, lineHeight: 1.4 }}>„{r.comment}"</div>}
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
-            <StarLine value={r.stars} size={14} />
-            <button
-              type="button" onClick={() => removeRating(r)}
-              style={{ ...styles.smallAction, color: C.muted, fontSize: 12 }}
-              aria-label={`Bewertung für ${r.meal_name} entfernen`}
-            >
-              Entfernen
-            </button>
-          </div>
+      {(ratings || []).slice(0, 3).map((r) => <RatingRow key={r.id} r={r} canteenName={canteenName} />)}
+      {ratings?.length > 0 && (
+        <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+          <button type="button" style={{ ...styles.ghostBtn, flex: 1 }} onClick={() => setListOpen("all")}>
+            ⭐ Alle ({ratings.length})
+          </button>
+          <button type="button" style={{ ...styles.ghostBtn, flex: 1 }} onClick={() => setListOpen("comments")} disabled={!stats.comments}>
+            💬 Kommentare ({stats.comments})
+          </button>
         </div>
-      ))}
-      {ratings && ratings.length > 15 && !showAll && (
-        <button type="button" style={styles.extrasToggle} onClick={() => setShowAll(true)}>
-          Alle {ratings.length} Bewertungen anzeigen
-        </button>
+      )}
+      {listOpen && (
+        <MyRatingsSheet
+          ratings={ratings || []} initial={listOpen} canteenName={canteenName}
+          onRemove={removeRating} onClose={() => setListOpen(null)}
+        />
       )}
 
       <DesignPicker theme={theme} onThemeChange={onThemeChange} />

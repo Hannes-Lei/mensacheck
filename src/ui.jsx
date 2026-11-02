@@ -232,7 +232,13 @@ export const globalCss = `
   input, textarea, select, button { font-family: inherit; }
   h1, h2, h3 { font-family: ${FONT_HEAD}; }
   .hscroll::-webkit-scrollbar { display: none; }
-  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+  .heart-pop { transform: translate(-50%, -50%) scale(0); animation: heartpop .8s ease-out forwards; filter: drop-shadow(0 4px 8px rgba(0,0,0,.25)); }
+  @keyframes heartpop { 0% { transform: translate(-50%,-50%) scale(0); opacity: 0; } 25% { transform: translate(-50%,-50%) scale(1.25); opacity: 1; } 45% { transform: translate(-50%,-50%) scale(.95); } 70% { transform: translate(-50%,-50%) scale(1); opacity: 1; } 100% { transform: translate(-50%,-70%) scale(1.1); opacity: 0; } }
+  @keyframes wrapIn { from { opacity: 0; transform: translateY(18px) scale(.97); } to { opacity: 1; transform: none; } }
+  .wrap-in > * { animation: wrapIn .5s ease-out both; }
+  .wrap-in > *:nth-child(2) { animation-delay: .12s; } .wrap-in > *:nth-child(3) { animation-delay: .24s; }
+  .wrap-in > *:nth-child(4) { animation-delay: .36s; } .wrap-in > *:nth-child(5) { animation-delay: .48s; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } .heart-pop, .wrap-in > * { animation-duration: .01s !important; } }
 `;
 
 export const styles = {

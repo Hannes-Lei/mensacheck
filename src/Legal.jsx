@@ -41,7 +41,7 @@ const PAGES = {
         <P>{LEGAL.name}{LEGAL.street ? " (Anschrift wie oben)" : ""}</P>
         <H>Hinweis</H>
         <P>
-          MensaCheck ist ein privates, nicht-kommerzielles Projekt von Studierenden und gehört nicht zum
+          Schmausi ist ein privates, nicht-kommerzielles Projekt von Studierenden und gehört nicht zum
           Studentenwerk Leipzig. Die Speisepläne kommen von OpenMensa und dem Studentenwerk Leipzig. Gerichte, Preise
           und Allergene sind ohne Gewähr. Verbindlich sind die Angaben vor Ort.
         </P>
@@ -56,7 +56,7 @@ const PAGES = {
     title: "Datenschutz",
     body: (
       <>
-        <P>Stand: {LEGAL.updated}. Hier steht, welche Daten MensaCheck verarbeitet, wozu und welche Rechte du hast.</P>
+        <P>Stand: {LEGAL.updated}. Hier steht, welche Daten Schmausi verarbeitet, wozu und welche Rechte du hast.</P>
         <H>1. Verantwortlich</H>
         <Address />
         <H>2. Welche Daten wir speichern</H>
@@ -120,7 +120,7 @@ const PAGES = {
         <P>Stand: {LEGAL.updated}. Mit der Registrierung stimmst du diesen Regeln zu.</P>
         <H>1. Worum es geht</H>
         <P>
-          MensaCheck ist kostenlos. Du kannst Gerichte der Leipziger Mensen bewerten, kommentieren und mit Freunden
+          Schmausi ist kostenlos. Du kannst Gerichte der Leipziger Mensen bewerten, kommentieren und mit Freunden
           teilen, wo ihr sitzt. Es besteht kein Anspruch darauf, dass die App immer erreichbar ist oder Funktionen
           dauerhaft bleiben.
         </P>
@@ -140,7 +140,7 @@ const PAGES = {
         </P>
         <H>4. Deine Inhalte</H>
         <P>
-          Deine Bewertungen und Kommentare bleiben deine. Du erlaubst MensaCheck nur, sie in der App anzuzeigen,
+          Deine Bewertungen und Kommentare bleiben deine. Du erlaubst Schmausi nur, sie in der App anzuzeigen,
           solange sie nicht gelöscht sind. Du kannst sie jederzeit selbst entfernen.
         </P>
         <H>5. Ohne Gewähr</H>

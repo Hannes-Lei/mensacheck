@@ -513,7 +513,7 @@ export default function TodayTab({
     const url = window.location.origin;
 
     if (navigator.share) {
-      try { await navigator.share({ title: "MensaCheck", text, url }); } catch { /* abgebrochen */ }
+      try { await navigator.share({ title: "Schmausi", text, url }); } catch { /* abgebrochen */ }
       return;
     }
     try {

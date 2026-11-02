@@ -110,11 +110,11 @@ export const BADGES = [
   { id: "fullweek", icon: "🗓️", name: "Volle Woche",       text: "Montag bis Freitag in einer Woche",  metric: "fullweeks", goal: 1 },
   { id: "streak",   icon: "🔥", name: "Serientäter",       text: "5 Mensatage am Stück bewertet",      metric: "streak",    goal: 5 },
   { id: "green",    icon: "🥗", name: "Grüner Teller",     text: "10 Gerichte ohne Fleisch",           metric: "meatless",  goal: 10 },
-  { id: "pasta",    icon: "🍝", name: "Pasta-Profi",       text: "10 Nudel- oder Pizzagerichte",       metric: "pasta",     goal: 10 },
+  { id: "pasta",    icon: "🍝", name: "Pasta-Profi",       text: "10 Gerichte vom Pastateller",        metric: "pasta",     goal: 10 },
   { id: "starry",   icon: "🌟", name: "Sternenregen",      text: "10-mal volle 5 Sterne vergeben",     metric: "fivestars", goal: 10 },
-  { id: "honest",   icon: "🧂", name: "Ehrliche Haut",     text: "5-mal 2 Sterne oder weniger",        metric: "lowstars",  goal: 5 },
   { id: "allstar",  icon: "🗺️", name: "Mensa-Weltreise",   text: "In 5 verschiedenen Mensen bewertet", metric: "canteens",  goal: 5 },
   { id: "complete", icon: "🏆", name: "Leipzig komplett",  text: "In allen 7 Mensen bewertet",         metric: "canteens",  goal: 7 },
+  { id: "pasta25",  icon: "🍜", name: "Nudel-Legende",     text: "25 Gerichte vom Pastateller",        metric: "pasta",     goal: 25 },
   { id: "variety",  icon: "🍱", name: "Allesprobierer",    text: "30 verschiedene Gerichte",           metric: "dishes",    goal: 30 },
   { id: "critic",   icon: "🧐", name: "Mensa-Kritiker",    text: "50 Bewertungen",                     metric: "ratings",   goal: 50 },
   { id: "columnist",icon: "📰", name: "Mensa-Kolumnist",   text: "50 Kommentare",                      metric: "comments",  goal: 50 },
@@ -122,7 +122,7 @@ export const BADGES = [
   { id: "legend",   icon: "👑", name: "Mensa-Legende",     text: "100 Bewertungen",                    metric: "ratings",   goal: 100 },
 ];
 
-// Braucht von jeder Bewertung: canteen_id, meal_date, meal_name, stars, comment
+// Braucht von jeder Bewertung: canteen_id, meal_date, meal_name, category, stars, comment
 export function computeStats(ratings) {
   const dates = [...new Set(ratings.map((r) => r.meal_date).filter(Boolean))].sort();
   const name = (r) => r.meal_name || "";
@@ -133,15 +133,15 @@ export function computeStats(ratings) {
     days: dates.length,
     dishes: new Set(ratings.map((r) => name(r).trim().toLowerCase()).filter(Boolean)).size,
     meatless: ratings.filter((r) => name(r) && (!MEAT_WORDS.test(name(r)) || MEAT_SUBST.test(name(r)))).length,
-    pasta: ratings.filter((r) => PASTA_DISH.test(name(r))).length,
+    pasta: ratings.filter((r) => (r.category ? /pasta/i.test(r.category) : PASTA_DISH.test(name(r)))).length,
     fivestars: ratings.filter((r) => Number(r.stars) >= 5).length,
-    lowstars: ratings.filter((r) => r.stars != null && Number(r.stars) <= 2).length,
     streak: longestStreak(dates),
     fullweeks: fullWeeks(dates),
   };
 }
 
-const PASTA_DISH = /pasta|nudel|spaghetti|penne|fusilli|tagliatelle|makkaroni|maccheroni|rigatoni|lasagne|tortellini|ravioli|gnocchi|spätzle|pizza/i;
+// Pasta: Gerichte vom Pastateller (ohne Kategorie: Nudeln im Namen). Pizza zählt nicht.
+const PASTA_DISH = /pasta|nudel|spaghetti|penne|fusilli|tagliatelle|makkaroni|maccheroni|rigatoni|lasagne|tortellini|ravioli|gnocchi/i;
 const dayNo = (d) => Math.round(Date.parse(d + "T12:00:00Z") / 86400000); // Tage seit 1970
 const weekday = (d) => new Date(d + "T12:00:00Z").getUTCDay();             // 0 = Sonntag
 

@@ -210,7 +210,7 @@ export default function MensaCheck() {
   const checkBadges = useCallback(async (silent = false) => {
     if (!userId) return;
     const { data } = await supabase.from("ratings")
-      .select("canteen_id, meal_date, meal_name, stars, comment").eq("user_id", userId).limit(5000);
+      .select("canteen_id, meal_date, meal_name, category, stars, comment").eq("user_id", userId).limit(5000);
     const stats = computeStats(data || []);
     const earned = BADGES.filter((b) => stats[b.metric] >= b.goal).map((b) => b.id);
 

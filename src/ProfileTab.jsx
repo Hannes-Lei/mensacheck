@@ -3,6 +3,7 @@ import { supabase } from "./supabase.js";
 import { BADGES, computeStats, dishKey, formatAvg, formatDate, friendlyError } from "./helpers.js";
 import { StarLine, Chip, Avatar, styles, C } from "./ui.jsx";
 import Moderation from "./Moderation.jsx";
+import { AccountSheet } from "./Legal.jsx";
 
 // Foto quadratisch zuschneiden und klein rechnen (256 × 256 Pixel, JPG).
 // So bleibt jedes Profilbild nur ca. 20–40 KB groß.
@@ -102,12 +103,13 @@ function DesignPicker({ theme, onThemeChange }) {
 // Ansicht "Ich": Statistik, Abzeichen, Lieblingsgerichte, eigene Bewertungen
 // ============================================================================
 export default function ProfileTab({
-  userId, username, canteens, favoritesList, onToggleFavorite, needLogin, onSignOut,
+  userId, username, canteens, favoritesList, onToggleFavorite, needLogin, onSignOut, onDeleted = () => {},
   theme, onThemeChange, active, avatarPath = null, onAvatarChange = () => {}, showToast = () => {},
 }) {
   const [ratings, setRatings] = useState(null);
   const [dishAvg, setDishAvg] = useState({});
   const [showAll, setShowAll] = useState(false);
+  const [showAccount, setShowAccount] = useState(false);
 
   useEffect(() => {
     if (!active || !userId) return;
@@ -271,6 +273,23 @@ export default function ProfileTab({
       <DesignPicker theme={theme} onThemeChange={onThemeChange} />
 
       <Moderation active={active} userId={userId} showToast={showToast} />
+
+      {/* ganz unten, bewusst unauffällig */}
+      <div style={{ textAlign: "center", marginTop: 28 }}>
+        <button
+          type="button" onClick={() => setShowAccount(true)}
+          style={{ background: "none", border: "none", color: C.faint, fontSize: 13, textDecoration: "underline", cursor: "pointer", padding: 6 }}
+        >
+          Konto & Daten
+        </button>
+      </div>
+      {showAccount && (
+        <AccountSheet
+          userId={userId} username={username} showToast={showToast}
+          onClose={() => setShowAccount(false)}
+          onDeleted={() => { setShowAccount(false); onDeleted(); }}
+        />
+      )}
     </main>
   );
 }

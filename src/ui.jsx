@@ -221,7 +221,10 @@ export function DietBadge({ diet }) {
 
 // Hell ist Standard. "Dunkel" setzt <html data-theme="dark">.
 export const globalCss = `
-  @import url("https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=DM+Sans:wght@400;500;600;700;800&display=swap");
+  /* Schriften liegen (optional) im eigenen Ordner public/fonts – NICHT mehr von Google laden (Datenschutz).
+     Fehlen die Dateien, nimmt das Handy seine Systemschrift. */
+  @font-face { font-family: "Bricolage Grotesque"; src: local("Bricolage Grotesque"), url("/fonts/bricolage.woff2") format("woff2"); font-weight: 200 800; font-display: swap; }
+  @font-face { font-family: "DM Sans"; src: local("DM Sans"), url("/fonts/dmsans.woff2") format("woff2"); font-weight: 100 1000; font-display: swap; }
   :root { ${cssVars(LIGHT)} color-scheme: light; }
   :root[data-theme="dark"] { ${cssVars(DARK)} color-scheme: dark; }
   * { box-sizing: border-box; }

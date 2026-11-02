@@ -3,10 +3,12 @@ import { supabase } from "./supabase.js";
 import { friendlyError } from "./helpers.js";
 import { styles, C } from "./ui.jsx";
 
+const inlineLink = { background: "none", border: "none", padding: 0, font: "inherit", color: "inherit", textDecoration: "underline", cursor: "pointer" };
+
 // ============================================================================
 // Fenster zum Registrieren und Anmelden
 // ============================================================================
-export default function AuthSheet({ onClose, note }) {
+export default function AuthSheet({ onClose, note, onLegal = () => {} }) {
   const [mode, setMode] = useState("register"); // register | login
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
@@ -97,6 +99,15 @@ export default function AuthSheet({ onClose, note }) {
         </div>
 
         {error && <div style={{ ...styles.notice, ...styles.noticeError, marginBottom: 12 }}>{error}</div>}
+
+        {mode === "register" && (
+          <p style={{ margin: "0 0 12px", fontSize: 12, color: C.muted, lineHeight: 1.5 }}>
+            Mit der Registrierung stimmst du den{" "}
+            <button type="button" onClick={() => onLegal("regeln")} style={inlineLink}>Nutzungsregeln</button> zu. Wie wir mit
+            deinen Daten umgehen, steht im{" "}
+            <button type="button" onClick={() => onLegal("datenschutz")} style={inlineLink}>Datenschutz</button>.
+          </p>
+        )}
 
         <button type="submit" disabled={busy} style={styles.primaryBtn}>
           {busy ? "Einen Moment…" : mode === "register" ? "Registrieren" : "Anmelden"}

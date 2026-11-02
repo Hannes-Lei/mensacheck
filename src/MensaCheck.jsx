@@ -6,6 +6,7 @@ import AuthSheet from "./AuthSheet.jsx";
 import TodayTab from "./TodayTab.jsx";
 import RankingTab from "./RankingTab.jsx";
 import ProfileTab from "./ProfileTab.jsx";
+import { LegalSheet, LegalLinks } from "./Legal.jsx";
 import FriendsTab from "./FriendsTab.jsx";
 import Celebration from "./Celebration.jsx";
 
@@ -45,6 +46,7 @@ export default function MensaCheck() {
   const [canteenId, setCanteenId] = useState(loadSavedCanteen() || 63);
 
   const [session, setSession] = useState(null);
+  const [legal, setLegal] = useState(null); // impressum | datenschutz | regeln
   const [username, setUsername] = useState(null);
   const [avatarPath, setAvatarPath] = useState(null); // eigenes Profilbild
   const [noTextLimit, setNoTextLimit] = useState(false); // Konto ohne Zeichen-Grenze?
@@ -353,6 +355,7 @@ export default function MensaCheck() {
           onToggleFavorite={toggleFavorite}
           needLogin={() => setShowAuth(true)}
           onSignOut={() => { supabase.auth.signOut(); setTab("today"); }}
+          onDeleted={() => { setTab("today"); window.scrollTo({ top: 0 }); showToast("Dein Konto wurde gelöscht. Mach's gut! 👋"); }}
           theme={theme}
           onThemeChange={setTheme}
           active={tab === "me"}
@@ -364,7 +367,8 @@ export default function MensaCheck() {
 
       <footer style={styles.footer}>
         Speiseplan: OpenMensa / Studentenwerk Leipzig · Preise für Studierende, ohne Gewähr.<br />
-        Testversion von MensaCheck.
+        Testversion von MensaCheck.<br />
+        <LegalLinks onOpen={setLegal} />
       </footer>
 
       <nav style={styles.nav} aria-label="Hauptnavigation">
@@ -392,6 +396,7 @@ export default function MensaCheck() {
       {showAuth && (
         <AuthSheet
           onClose={() => setShowAuth(false)}
+          onLegal={setLegal}
           note={pendingCode && !userId ? "Du wurdest in eine Gruppe eingeladen. Melde dich an oder registriere dich, um beizutreten." : null}
         />
       )}
@@ -411,6 +416,7 @@ export default function MensaCheck() {
           </div>
         </div>
       )}
+      {legal && <LegalSheet page={legal} onClose={() => setLegal(null)} />}
       {celebrate.length > 0 && <Celebration key={celebrate[0].id} badge={celebrate[0]} onDone={finishCelebration} />}
     </div>
   );

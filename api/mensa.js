@@ -128,6 +128,8 @@ function cleanMeal(meal) {
   else if (cat.includes("vegetar")) diet = "vegetarisch";
   else if (!hasMeat && saysVegan) diet = "vegan";
   else if (!hasMeat && saysVegetarian) diet = "vegetarisch";
+  // Der Wok ohne Topping ist immer vegetarisch (Fleisch gibt es nur als Topping)
+  if (/wok/i.test(cat) && !meatInName && !diet) diet = "vegetarisch";
 
   return {
     id: meal.id,
@@ -141,17 +143,54 @@ function cleanMeal(meal) {
   };
 }
 
+// Wok: Das Studentenwerk listet den Wok oft zweimal – ohne Topping (z.B. 2,50 €)
+// und mit Topping (z.B. 3,50 €, Beilagen „Putengeschnetzeltes …, Brokkoli
+// Knuspernuggets (vegetarisch)"). Die Namen sind gleich oder fast gleich.
+const compact = (n) => n.toLowerCase().replace(/["„“”'`´]/g, "").replace(/[\s-]+/g, "");
+const words = (n) => n.toLowerCase().replace(/["„“”'`´]/g, "").split(/[\s-]+/).filter(Boolean);
+function wordMatch(x, y) {
+  if (x === y) return true;
+  let i = 0;
+  while (i < x.length && i < y.length && x[i] === y[i]) i++;
+  return i >= 5 && i >= 0.6 * Math.min(x.length, y.length);
+}
+function similarName(a, b) {          // gleiche Regel wie sameDish in src/helpers.js
+  let A = words(a), B = words(b);
+  if (A.length > B.length) [A, B] = [B, A];
+  return A.length >= 2 && B.length - A.length <= 2 && A.every((x) => B.some((y) => wordMatch(x, y)));
+}
+
 export function cleanDays(days) {
   return (Array.isArray(days) ? days : []).map((day) => {
-    const seen = new Set();
+    const seen = new Map();
     const meals = [];
     for (const m of day.meals || []) {
       const meal = cleanMeal(m);
       if (isPastaExtra(meal.category, meal.name)) continue; // nur Soßen zeigen
       if (PLACEHOLDER.test(meal.name)) continue; // "nach Angebot" sagt nichts
-      const key = `${meal.category}|${meal.name}`;
-      if (seen.has(key)) continue; // doppelte Einträge entfernen
-      seen.add(key);
+      // doppelte Einträge entfernen – auch wenn sie sich nur in Leerzeichen/
+      // Bindestrichen unterscheiden („Gemüsepfanne" / „Gemüse Pfanne"); beim Wok
+      // auch bei fast gleichem Namen (ohne / mit Topping)
+      const key = `${meal.category}|${compact(meal.name)}`;
+      const first = seen.get(key)
+        || (/wok/i.test(meal.category) && meals.find((x) => x.category === meal.category && similarName(x.name, meal.name)));
+      if (first) {
+        // Angaben zusammenführen; der kürzere Name bleibt (meist der Grundname
+        // ohne „… und Topping"), so wird immer unter demselben Namen bewertet
+        if (meal.name.length < first.name.length) first.name = meal.name;
+        first.sides = [...new Set([...first.sides, ...meal.sides])];
+        first.allergens = [...new Set([...first.allergens, ...meal.allergens])];
+        if (first.diet !== meal.diet) first.diet = first.diet && meal.diet ? "vegetarisch" : null;
+        // zwei Preise: günstiger = ohne Topping, teurer = mit Topping
+        const prices = [first.price, first.toppingPrice, meal.price].filter((p) => p != null);
+        if (prices.length) {
+          first.price = Math.min(...prices);
+          const max = Math.max(...prices);
+          if (max > first.price) first.toppingPrice = max;
+        }
+        continue;
+      }
+      seen.set(key, meal);
       meals.push(meal);
     }
     return { date: day.date, closed: !!day.closed, meals };

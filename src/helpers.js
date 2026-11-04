@@ -255,6 +255,8 @@ export function mealVariants(m) {
   return toppings.map((x) => ({ value: x, label: variantLabel(x), icon: variantIcon(x) }));
 }
 
+export const nameHasMeat = (n) => MEAT_WORDS.test(n || "") && !MEAT_SUBST.test(n || "");
+
 // Ohne Fleisch gegessen? Wok ohne Topping ist immer vegetarisch, bei einem
 // Topping zählt das Topping, sonst der Name.
 export function isMeatless(r) {

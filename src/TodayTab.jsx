@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "./supabase.js";
 import {
-  todayBerlin, daysAgo, isWeekend, lastMensaDay, formatPrice, formatAvg, dayLabel, friendlyError, dishKey, dishName, sameDish, mealVariants, variantLabel, variantIcon, NO_TOPPING, shortDate, isPastaExtra, isPlaceholderMeal, cleanSidesAndAllergens, mealGroup,
+  todayBerlin, daysAgo, isWeekend, lastMensaDay, formatPrice, formatAvg, dayLabel, friendlyError, dishKey, dishName, sameDish, mealVariants, variantLabel, variantIcon, NO_TOPPING, nameHasMeat, shortDate, isPastaExtra, isPlaceholderMeal, cleanSidesAndAllergens, mealGroup,
 } from "./helpers.js";
 import { Stars, StarLine, Chip, DietBadge, Avatar, formatStars, styles, C, FONT_HEAD } from "./ui.jsx";
 import { CommentItem, THREAD_SELECT } from "./Interactions.jsx";
@@ -278,7 +278,8 @@ function archivedMeal(r) {
     price: r.price,
     sides,
     allergens,
-    diet: r.diet || null,
+    // Wok ohne Topping ist immer vegetarisch (gleiche Regel wie in api/mensa.js)
+    diet: r.diet || (/wok/i.test(r.category || "") && !nameHasMeat(r.meal_name) ? "vegetarisch" : null),
     isMain: r.is_main ?? true,
   };
 }
@@ -306,6 +307,19 @@ function rememberToday(canteenId, day) {
     .from("menu_items")
     .upsert([...rows.values()], { onConflict: "canteen_id,meal_date,meal_name", ignoreDuplicates: true })
     .then(({ error }) => error && console.warn("Gerichte merken:", error.message));
+}
+
+// Zwei Einträge desselben Gerichts zusammenführen (Beilagen, Allergene, Preise)
+function mergeMeal(t, m) {
+  t.sides = [...new Set([...(t.sides || []), ...(m.sides || [])])];
+  t.allergens = [...new Set([...(t.allergens || []), ...(m.allergens || [])])];
+  const prices = [t.price, t.toppingPrice, m.price, m.toppingPrice].filter((p) => p != null).map(Number);
+  if (prices.length) {
+    t.price = Math.min(...prices);
+    const max = Math.max(...prices);
+    t.toppingPrice = max > t.price ? max : null;
+  }
+  if (t.diet && m.diet && t.diet !== m.diet) t.diet = "vegetarisch";
 }
 
 // Bewertungen mehrerer Schreibweisen eines Gerichts zusammenrechnen
@@ -675,13 +689,21 @@ export default function TodayTab({
     // Plan standen. Für Tage in der Zukunft gilt nur der aktuelle Plan.
     let all = plan;
     if (!isFuture) {
-      const list = [...plan];
-      // gleiches Gericht in anderer Schreibweise nicht doppelt zeigen (der aktuelle Plan gewinnt)
-      const seen = new Set(plan.map((m) => dishName(m.name)));
+      const list = plan.map((m) => ({ ...m }));
+      // gleiches Gericht in anderer Schreibweise nicht doppelt zeigen (der aktuelle
+      // Plan gewinnt) – aber Beilagen und Preise zusammenführen. Wichtig beim Wok:
+      // Ist er nicht mehr im Plan, stehen Grundpreis und Topping-Eintrag getrennt
+      // in den gemerkten Gerichten, und nur einer von beiden hat die Toppings.
+      const byKey = new Map(list.map((m) => [dishName(m.name), m]));
+      const wokTwin = (m) => /wok/i.test(m.category || "")
+        && list.find((x) => x.category === m.category && sameDish(x.name, m.name));
       // Nicht mehr gelistete Gerichte hinter ihre Kategorie einsortieren
       const add = (m) => {
-        if (seen.has(dishName(m.name)) || renames[dishName(m.name)]) return;
-        seen.add(dishName(m.name));
+        const k = dishName(m.name);
+        if (renames[k]) return;
+        const twin = byKey.get(k) || wokTwin(m);
+        if (twin) { mergeMeal(twin, m); return; }
+        byKey.set(k, m);
         let i = -1;
         list.forEach((x, idx) => { if (x.category === m.category) i = idx; });
         if (i >= 0) list.splice(i + 1, 0, m);

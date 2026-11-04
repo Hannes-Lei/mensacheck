@@ -241,8 +241,9 @@ export function mealGroup(m) {
 // ---- Wok: ohne Topping, mit Fleisch oder veggie? ---------------------------
 // Den Wok gibt es ohne Topping (meist 2,50 €) oder mit Topping (meist 3,50 €),
 // dabei meist ein Fleisch- und ein veggie Angebot, z.B. „mit Putengeschnetzeltes …,
-// Brokkoli Knuspernuggets (vegetarisch)". Beim Bewerten wählt man, was man hatte.
-export const NO_TOPPING = "ohne Topping";
+// Brokkoli Knuspernuggets (vegetarisch)". Beim Bewerten tippt man das Topping an;
+// nichts angetippt = ohne Topping (ratings.variant bleibt leer).
+export const NO_TOPPING = "ohne Topping"; // nur noch für ältere Bewertungen
 const VEG_MARK = /\((vegetarisch|vegan)\)/i;
 export const variantIsVeg = (s) => VEG_MARK.test(s || "") || MEAT_SUBST.test(s || "") || !MEAT_WORDS.test(s || "");
 export const variantLabel = (s) => String(s || "").replace(/\s*\((vegetarisch|vegan)\)\s*/gi, " ").trim();
@@ -251,7 +252,7 @@ export function mealVariants(m) {
   if (!/wok/i.test(m?.category || "")) return null;
   const toppings = (m.sides || []).filter((x) => VEG_MARK.test(x) || MEAT_SUBST.test(x) || MEAT_WORDS.test(x));
   if (toppings.length === 0) return null;
-  return [NO_TOPPING, ...toppings].map((x) => ({ value: x, label: x === NO_TOPPING ? "Ohne Topping" : variantLabel(x), icon: variantIcon(x) }));
+  return toppings.map((x) => ({ value: x, label: variantLabel(x), icon: variantIcon(x) }));
 }
 
 // Ohne Fleisch gegessen? Wok ohne Topping ist immer vegetarisch, bei einem

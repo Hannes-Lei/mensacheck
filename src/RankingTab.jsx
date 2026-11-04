@@ -24,7 +24,7 @@ const MEDALS = ["🥇", "🥈", "🥉"];
 // Wok: „🍚 ohne 4,0 (2) · 🍗 3,5 (1) · 🥦 4,5 (3)"
 const KINDS = [["ohne", "🍚 ohne"], ["meat", "🍗"], ["veg", "🥦"]];
 function VariantLine({ v }) {
-  if (!v) return null;
+  if (!v || (!v.meat && !v.veg)) return null; // nur zeigen, wenn jemand ein Topping hatte
   const parts = KINDS.filter(([k]) => v[k]).map(([k, label]) => `${label} ${formatAvg(v[k].sum / v[k].n)} (${v[k].n})`);
   return (
     <div style={{ fontSize: 12, color: C.muted, marginTop: 4, display: "flex", flexWrap: "wrap", columnGap: 8, rowGap: 2 }}>
@@ -69,15 +69,15 @@ export default function RankingTab({ canteens, canteenId, active }) {
         setRows(data || []);
       });
 
-    // Wok: Bewertungen mit Auswahl (ohne Topping / Fleisch / veggie) getrennt zählen
-    let q = supabase.from("ratings").select("canteen_id, dish, variant, stars").not("variant", "is", null).limit(5000);
+    // Wok: Bewertungen nach Topping getrennt zählen (kein Topping gewählt = ohne)
+    let q = supabase.from("ratings").select("canteen_id, dish, variant, stars").ilike("category", "%wok%").limit(5000);
     if (p.since()) q = q.gte("meal_date", p.since());
     if (scope !== "all") q = q.eq("canteen_id", scope);
     q.then(({ data }) => {
       if (cancelled) return;
       const out = {};
       for (const r of data || []) {
-        const kind = r.variant === NO_TOPPING ? "ohne" : variantIsVeg(r.variant) ? "veg" : "meat";
+        const kind = !r.variant || r.variant === NO_TOPPING ? "ohne" : variantIsVeg(r.variant) ? "veg" : "meat";
         const g = ((out[`${r.canteen_id}|${r.dish}`] ||= {})[kind] ||= { sum: 0, n: 0 });
         g.sum += Number(r.stars); g.n++;
       }

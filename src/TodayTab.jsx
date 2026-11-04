@@ -107,7 +107,7 @@ function MealCard({
   const [saving, setSaving] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
 
-  // Wok: Fleisch oder veggie? Erst auswählen, dann Sterne
+  // Wok: Topping antippen (nochmal tippen = wieder ohne Topping)
   const variants = mealVariants(m);
   const [picked, setPicked] = useState(null);
   const variant = mine?.variant || picked;
@@ -115,14 +115,14 @@ function MealCard({
 
   function handleRate(stars) {
     if (!canRate) return needLogin();
-    if (variants && !variant) { thread?.showToast?.("Wähle zuerst, wie du den Wok hattest 🍚 / 🍗 / 🥦"); return; }
     onRate(m, stars, variant || null);
   }
 
   function pickVariant(v) {
     if (!canRate) return needLogin();
-    setPicked(v);
-    if (mine?.stars && mine.variant !== v) onVariant(m, v);
+    const next = variant === v ? null : v;
+    setPicked(next);
+    if (mine?.stars) onVariant(m, next);
   }
 
   function startComment() {
@@ -188,8 +188,8 @@ function MealCard({
       <ScoreBar total={total} day={stats} date={date} today={today} compact={compact} />
 
       {variants && !isFuture && (
-        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, marginTop: 10 }} role="group" aria-label="Was hattest du dazu?">
-          <span style={{ fontSize: 13, fontWeight: 700, color: C.muted, marginRight: 2 }}>Was hattest du?</span>
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, marginTop: 10 }} role="group" aria-label="Mit Topping?">
+          <span style={{ fontSize: 13, fontWeight: 700, color: C.muted, marginRight: 2 }}>Mit Topping?</span>
           {variants.map((v) => (
             <Chip key={v.value} active={variant === v.value} onClick={() => pickVariant(v.value)} aria-pressed={variant === v.value}>
               {v.icon} {v.label}

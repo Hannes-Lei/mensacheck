@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { supabase } from "./supabase.js";
-import { daysAgo, formatAvg, formatDate } from "./helpers.js";
+import { daysAgo, formatAvg, formatDate, dishName, variantIsVeg, NO_TOPPING } from "./helpers.js";
 import { Chip, StarLine, styles, C } from "./ui.jsx";
 
 // ============================================================================
@@ -21,6 +21,18 @@ const PERIODS = [
 
 const MEDALS = ["🥇", "🥈", "🥉"];
 
+// Wok: „🍚 ohne 4,0 (2) · 🍗 3,5 (1) · 🥦 4,5 (3)"
+const KINDS = [["ohne", "🍚 ohne"], ["meat", "🍗"], ["veg", "🥦"]];
+function VariantLine({ v }) {
+  if (!v) return null;
+  const parts = KINDS.filter(([k]) => v[k]).map(([k, label]) => `${label} ${formatAvg(v[k].sum / v[k].n)} (${v[k].n})`);
+  return (
+    <div style={{ fontSize: 12, color: C.muted, marginTop: 4, display: "flex", flexWrap: "wrap", columnGap: 8, rowGap: 2 }}>
+      {parts.map((t) => <span key={t} style={{ whiteSpace: "nowrap" }}>{t}</span>)}
+    </div>
+  );
+}
+
 // kleines Schild mit der Mensa, in der das Gericht bewertet wurde
 const mensaTag = {
   display: "inline-block", padding: "1px 8px", borderRadius: 10, fontSize: 11, fontWeight: 700,
@@ -32,6 +44,7 @@ export default function RankingTab({ canteens, canteenId, active }) {
   const [scope, setScope] = useState("all"); // "all" oder Mensa-Nummer
   const [mode, setMode] = useState("top"); // top | flop
   const [rows, setRows] = useState(null);
+  const [byVariant, setByVariant] = useState({}); // Wok: Schnitt je Auswahl (ohne / Fleisch / veggie)
   const [error, setError] = useState(null);
   const [showAll, setShowAll] = useState(false);
 
@@ -55,6 +68,21 @@ export default function RankingTab({ canteens, canteenId, active }) {
         if (err) setError("Die Rangliste konnte nicht geladen werden.");
         setRows(data || []);
       });
+
+    // Wok: Bewertungen mit Auswahl (ohne Topping / Fleisch / veggie) getrennt zählen
+    let q = supabase.from("ratings").select("canteen_id, dish, variant, stars").not("variant", "is", null).limit(5000);
+    if (p.since()) q = q.gte("meal_date", p.since());
+    if (scope !== "all") q = q.eq("canteen_id", scope);
+    q.then(({ data }) => {
+      if (cancelled) return;
+      const out = {};
+      for (const r of data || []) {
+        const kind = r.variant === NO_TOPPING ? "ohne" : variantIsVeg(r.variant) ? "veg" : "meat";
+        const g = ((out[`${r.canteen_id}|${r.dish}`] ||= {})[kind] ||= { sum: 0, n: 0 });
+        g.sum += Number(r.stars); g.n++;
+      }
+      setByVariant(out);
+    });
     return () => { cancelled = true; };
   }, [active, period, scope]);
 
@@ -119,6 +147,7 @@ export default function RankingTab({ canteens, canteenId, active }) {
                 <span style={mensaTag}>📍 {canteenName(r.canteen_id)}</span>
                 <span>zuletzt {formatDate(r.last_served)}</span>
               </div>
+              <VariantLine v={byVariant[`${r.canteen_id}|${dishName(r.meal_name)}`]} />
             </div>
             <div style={styles.rankScore}>
               <div style={{ fontSize: 18, fontWeight: 800 }}>{formatAvg(r.avg_stars)}</div>

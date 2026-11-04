@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { supabase } from "./supabase.js";
-import { BADGES, computeStats, dishKey, formatAvg, formatDate, friendlyError } from "./helpers.js";
+import { BADGES, computeStats, dishKey, formatAvg, formatDate, friendlyError, variantIcon, variantLabel, NO_TOPPING } from "./helpers.js";
 import { StarLine, Chip, Avatar, styles, C } from "./ui.jsx";
 import Moderation from "./Moderation.jsx";
 import { AccountSheet } from "./Legal.jsx";
@@ -109,6 +109,9 @@ function RatingRow({ r, canteenName, onRemove }) {
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={styles.rankName}>{r.meal_name}</div>
         <div style={styles.rankMeta}>{canteenName(r.canteen_id)} · {formatDate(r.meal_date)}</div>
+        {r.variant && r.variant !== NO_TOPPING && (
+          <div style={{ fontSize: 13, color: C.muted, marginTop: 3 }}>{variantIcon(r.variant)} mit {variantLabel(r.variant)}</div>
+        )}
         {r.comment && <div style={{ fontSize: 13, color: C.soft, marginTop: 6, lineHeight: 1.4 }}>„{r.comment}"</div>}
       </div>
       <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>

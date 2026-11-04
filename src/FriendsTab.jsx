@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "./supabase.js";
-import { daysAgo, todayBerlin, formatDate, timeAgo, friendlyError } from "./helpers.js";
+import { daysAgo, todayBerlin, formatDate, timeAgo, friendlyError, variantIcon, variantLabel, NO_TOPPING } from "./helpers.js";
 import { Chip, StarLine, Avatar, formatStars, styles, C, FONT_HEAD } from "./ui.jsx";
 import { Interactions, LongText, THREAD_SELECT } from "./Interactions.jsx";
 import { SeatRow, SeatSheet, SeatNotice } from "./Seats.jsx";
@@ -192,6 +192,11 @@ function FeedItem({ item, canteenName, ...thread }) {
             <StarLine value={item.stars} size={17} />
             <strong style={{ fontSize: 14 }}>{formatStars(item.stars)}</strong>
           </div>
+          {item.variant && (
+            <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>
+              {variantIcon(item.variant)} {item.variant === NO_TOPPING ? "ohne Topping" : `mit ${variantLabel(item.variant)}`}
+            </div>
+          )}
           {item.comment && (
             <p style={{ ...styles.comment, margin: "10px 0 0", lineHeight: 1.45, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
               <LongText text={item.comment} before="„" after={'"'} />

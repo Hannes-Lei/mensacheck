@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "./supabase.js";
 import {
-  todayBerlin, daysAgo, isWeekend, lastMensaDay, formatPrice, formatAvg, dayLabel, friendlyError, dishKey, dishName, shortDate, isPastaExtra, isPlaceholderMeal, cleanSidesAndAllergens, mealGroup,
+  todayBerlin, daysAgo, isWeekend, lastMensaDay, formatPrice, formatAvg, dayLabel, friendlyError, dishKey, dishName, sameDish, shortDate, isPastaExtra, isPlaceholderMeal, cleanSidesAndAllergens, mealGroup,
 } from "./helpers.js";
 import { Stars, StarLine, Chip, DietBadge, Avatar, formatStars, styles, C, FONT_HEAD } from "./ui.jsx";
 import { CommentItem, THREAD_SELECT } from "./Interactions.jsx";
@@ -11,7 +11,7 @@ import { CommentItem, THREAD_SELECT } from "./Interactions.jsx";
 // ============================================================================
 
 // ---- Kommentare zu einem Gericht (aus allen Tagen) ------------------------
-function CommentList({ canteenId, date, mealName, refreshKey, ...thread }) {
+function CommentList({ canteenId, date, mealName, dishes, refreshKey, ...thread }) {
   const [items, setItems] = useState(null);
 
   useEffect(() => {
@@ -20,7 +20,7 @@ function CommentList({ canteenId, date, mealName, refreshKey, ...thread }) {
       .from("ratings")
       .select(THREAD_SELECT)
       .eq("canteen_id", canteenId)
-      .eq("dish", dishName(mealName))
+      .in("dish", dishes?.length ? dishes : [dishName(mealName)])
       .not("comment", "is", null)
       .neq("comment", "")
       .order("created_at", { ascending: false })
@@ -31,7 +31,7 @@ function CommentList({ canteenId, date, mealName, refreshKey, ...thread }) {
         setItems(error ? "fehler" : data || []);
       });
     return () => { cancelled = true; };
-  }, [canteenId, mealName, refreshKey]);
+  }, [canteenId, mealName, (dishes || []).join("|"), refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (items === null) return <p style={styles.mutedText}>Kommentare werden geladen…</p>;
   if (items === "fehler") return <p style={styles.mutedText}>Kommentare konnten nicht geladen werden.</p>;
@@ -98,7 +98,7 @@ const scoreEmpty = { gap: 6, fontSize: 13, color: C.faint };
 function MealCard({
   meal: m, stats, total, mine, isFavorite, canRate, isFuture, friendRatings = [],
   onRate, onComment, onRemove, onFavorite, onShare, needLogin, canteenId, date, today, compact = false,
-  thread,
+  thread, dishes,
 }) {
   const [showAllergens, setShowAllergens] = useState(false);
   const [showComments, setShowComments] = useState(false);
@@ -233,7 +233,7 @@ function MealCard({
         </div>
       )}
 
-      {showComments && <CommentList canteenId={canteenId} date={date} mealName={m.name} refreshKey={refreshKey} {...thread} />}
+      {showComments && <CommentList canteenId={canteenId} date={date} mealName={m.name} dishes={dishes} refreshKey={refreshKey} {...thread} />}
     </article>
   );
 }
@@ -277,6 +277,22 @@ function rememberToday(canteenId, day) {
     .from("menu_items")
     .upsert([...rows.values()], { onConflict: "canteen_id,meal_date,meal_name", ignoreDuplicates: true })
     .then(({ error }) => error && console.warn("Gerichte merken:", error.message));
+}
+
+// Bewertungen mehrerer Schreibweisen eines Gerichts zusammenrechnen
+function mergeStats(list) {
+  const xs = list.filter(Boolean);
+  if (xs.length <= 1) return xs[0];
+  return xs.reduce((o, r) => {
+    const v = Number(o.votes) + Number(r.votes);
+    return {
+      ...o, votes: v,
+      avg_stars: (Number(o.avg_stars) * o.votes + Number(r.avg_stars) * r.votes) / v,
+      comments: Number(o.comments || 0) + Number(r.comments || 0),
+      days: Math.max(o.days || 0, r.days || 0),
+      last_date: o.last_date > r.last_date ? o.last_date : r.last_date,
+    };
+  });
 }
 
 // Reihenfolge nach Gesamtbewertung: erst Gerichte mit mindestens 2 Stimmen
@@ -390,7 +406,7 @@ export default function TodayTab({
       .limit(1000);
     const archiveReq = supabase
       .from("menu_items")
-      .select("meal_name, category, price, sides, allergens, diet, is_main")
+      .select("meal_name, category, price, sides, allergens, diet, is_main, first_seen")
       .eq("canteen_id", canteenId)
       .eq("meal_date", date)
       .order("first_seen", { ascending: true });
@@ -456,7 +472,10 @@ export default function TodayTab({
     return out;
   }, [friendHistory, friends, avatars]);
 
-  const totalOf = (name) => totals[dishName(name)];
+  // Gesamtbewertung – bei umbenannten Gerichten über alle Schreibweisen (siehe renames)
+  const totalOf = (name) => mergeStats(variants(name).map((k) => totals[k]));
+  const mineOf = (name) => variants(name).map((k) => mine[k]).find(Boolean);
+  const mineKey = (name) => variants(name).find((k) => mine[k]) || dishName(name);
   useEffect(() => { loadRatings(); }, [loadRatings]);
   useEffect(() => {
     const t = setInterval(loadRatings, 60000);
@@ -466,7 +485,7 @@ export default function TodayTab({
   // 3) Bewerten, Kommentieren, Entfernen
   // Hast du das Gericht schon unter einer älteren Schreibweise bewertet,
   // wird diese Bewertung geändert statt eine zweite angelegt.
-  const savedName = (meal) => mine[dishName(meal.name)]?.meal_name || meal.name;
+  const savedName = (meal) => mineOf(meal.name)?.meal_name || meal.name;
 
   async function saveRating(meal, stars, comment) {
     const { error: err } = await supabase.from("ratings").upsert(
@@ -481,7 +500,7 @@ export default function TodayTab({
   }
 
   async function rate(meal, stars) {
-    const k = dishName(meal.name);
+    const k = mineKey(meal.name);
     const before = mine[k];
     setMine((p) => ({ ...p, [k]: { ...before, meal_name: before?.meal_name || meal.name, stars } }));
     const ok = await saveRating(meal, stars, before?.comment);
@@ -491,7 +510,7 @@ export default function TodayTab({
   }
 
   async function removeRating(meal) {
-    const k = dishName(meal.name);
+    const k = mineKey(meal.name);
     const before = mine[k];
     const hint = before?.comment ? " Dein Kommentar wird dabei auch gelöscht." : "";
     if (!window.confirm(`Deine Bewertung für „${meal.name}" entfernen?${hint}`)) return;
@@ -509,7 +528,7 @@ export default function TodayTab({
   }
 
   async function comment(meal, text) {
-    const current = mine[dishName(meal.name)];
+    const current = mineOf(meal.name);
     if (!current?.stars) { showToast("Bitte zuerst Sterne vergeben."); return false; }
     const ok = await saveRating(meal, current.stars, text);
     if (ok) { await loadRatings(); if (text && !current.comment) onActivity(); }
@@ -544,6 +563,43 @@ export default function TodayTab({
   const currentDay = days.find((d) => d.date === date);
   const isFuture = date > today;
   const isPast = !!date && date < today;
+
+  // Umbenannte Gerichte erkennen: Ein Name ist vom Plan verschwunden und ein fast
+  // gleicher Name derselben Kategorie ist erst später dazugekommen
+  // („Quarkkeulchen mit Apfelmus" → „sächsische Quarkkeulchen mit Apfelmus").
+  // Standen beide gleichzeitig auf dem Plan, sind es zwei verschiedene Gerichte.
+  const renames = useMemo(() => {
+    const out = {}; // dishName(alter Name) -> { from, to }
+    if (isFuture || !currentDay) return out;
+    const plan = currentDay.meals || [];
+    const planKeys = new Set(plan.map((m) => dishName(m.name)));
+    const seenAt = {};
+    for (const r of archive || []) seenAt[dishName(r.meal_name)] ??= Date.parse(r.first_seen);
+    for (const r of archive || []) {
+      const k = dishName(r.meal_name);
+      if (planKeys.has(k) || out[k]) continue;
+      const to = plan.find((m) => (m.category || "") === (r.category || "") && sameDish(m.name, r.meal_name)
+        && !(seenAt[dishName(m.name)] <= seenAt[k] + 60000));
+      if (to) out[k] = { from: r.meal_name, to: to.name };
+    }
+    return out;
+  }, [currentDay, archive, isFuture]);
+  // alle Schreibweisen eines Gerichts (der aktuelle Name zuerst)
+  function variants(name) {
+    const k = dishName(name);
+    return [k, ...Object.keys(renames).filter((o) => dishName(renames[o].to) === k)];
+  }
+
+  // Umbenennung auch in der Datenbank festhalten: Bewertungen wandern zum neuen
+  // Namen (Supabase prüft selbst noch einmal, siehe SQL 16). Danach neu laden.
+  const mergedRef = useRef(new Set());
+  useEffect(() => {
+    const todo = Object.values(renames).filter((r) => !mergedRef.current.has(`${canteenId}|${date}|${r.from}`));
+    if (todo.length === 0) return;
+    todo.forEach((r) => mergedRef.current.add(`${canteenId}|${date}|${r.from}`));
+    Promise.all(todo.map((r) => supabase.rpc("merge_dish_rename", { p_canteen: canteenId, p_date: date, p_old: r.from, p_new: r.to })))
+      .then((res) => { if (res.some((x) => !x.error && x.data > 0)) loadRatings(); });
+  }, [renames]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Tag-Auswahl so scrollen, dass "Heute" ganz links steht. Der letzte
   // Mensatag (zum Nachbewerten) liegt links daneben und erscheint erst,
@@ -583,7 +639,7 @@ export default function TodayTab({
       const seen = new Set(plan.map((m) => dishName(m.name)));
       // Nicht mehr gelistete Gerichte hinter ihre Kategorie einsortieren
       const add = (m) => {
-        if (seen.has(dishName(m.name))) return;
+        if (seen.has(dishName(m.name)) || renames[dishName(m.name)]) return;
         seen.add(dishName(m.name));
         let i = -1;
         list.forEach((x, idx) => { if (x.category === m.category) i = idx; });
@@ -599,7 +655,7 @@ export default function TodayTab({
     const filtered = all.filter((m) => matchesDiet(m, dietFilter));
     // Standard: erst Fleisch/Fisch, dann vegan/vegetarisch, dann Pasta, dann der Rest
     const sorted = sortByRating
-      ? [...filtered].sort((a, b) => byTotal(totals[dishName(a.name)], totals[dishName(b.name)]))
+      ? [...filtered].sort((a, b) => byTotal(totalOf(a.name), totalOf(b.name)))
       : [...filtered].sort((a, b) => mealGroup(a) - mealGroup(b));
 
     return {
@@ -607,7 +663,7 @@ export default function TodayTab({
       extras: sorted.filter((m) => !m.isMain),
       favToday: all.filter((m) => favorites.has(dishKey(canteenId, m.name))),
     };
-  }, [currentDay, archive, ratedMeals, isFuture, dietFilter, sortByRating, totals, favorites, canteenId]);
+  }, [currentDay, archive, ratedMeals, isFuture, dietFilter, sortByRating, totals, favorites, canteenId, renames]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Tagessieger: Hauptgericht mit der besten Gesamtbewertung. Gerichte mit
   // mindestens 2 Stimmen gehen vor, damit nicht eine einzelne 5 gewinnt.
@@ -623,9 +679,10 @@ export default function TodayTab({
 
   const cardProps = (m, compact = false) => ({
     meal: m,
-    stats: stats[dishName(m.name)],
+    stats: mergeStats(variants(m.name).map((k) => stats[k])),
     total: totalOf(m.name),
-    mine: mine[dishName(m.name)],
+    mine: mineOf(m.name),
+    dishes: variants(m.name),
     isFavorite: favorites.has(dishKey(canteenId, m.name)),
     canRate: !!userId,
     isFuture,
@@ -633,7 +690,7 @@ export default function TodayTab({
     onComment: comment,
     onRemove: removeRating,
     onShare: share,
-    friendRatings: friendsByDish[dishName(m.name)] || [],
+    friendRatings: variants(m.name).flatMap((k) => friendsByDish[k] || []),
     thread: { userId, username, friends, needLogin, showToast, noTextLimit },
     onFavorite: (meal) => onToggleFavorite(canteenId, meal.name),
     needLogin,

@@ -84,6 +84,25 @@ export function dishName(mealName) {
     .replace(DANGLING, "");
 }
 
+// Fast gleicher Name? Für Gerichte, die das Studentenwerk im Laufe des Tages
+// umbenennt („Quarkkeulchen mit Apfelmus" → „sächsische Quarkkeulchen mit Apfelmus").
+// Alle Wörter des kürzeren Namens müssen im längeren stecken, höchstens 2 Wörter
+// mehr. Wörter mit gleichem Anfang („Tomatensoße"/„Tomatensosse") zählen als gleich.
+// Gleiche Regel wie dish_similar in Supabase (SQL 16).
+const dishWords = (n) => dishName(n).split(/[\s-]+/).filter(Boolean);
+function wordMatch(x, y) {
+  if (x === y) return true;
+  let i = 0;
+  while (i < x.length && i < y.length && x[i] === y[i]) i++;
+  return i >= 5 && i >= 0.6 * Math.min(x.length, y.length);
+}
+export function sameDish(a, b) {
+  let A = dishWords(a), B = dishWords(b);
+  if (A.length > B.length) [A, B] = [B, A];
+  if (!A.every((x) => B.some((y) => wordMatch(x, y)))) return false;
+  return A.length >= 2 && B.length - A.length <= 2;
+}
+
 // Schlüssel für ein Gericht über alle Tage hinweg (Favoriten, Ranglisten)
 export function dishKey(canteenId, mealName) {
   return `${canteenId}|${dishName(mealName)}`;

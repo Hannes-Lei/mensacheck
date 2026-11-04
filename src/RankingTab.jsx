@@ -146,7 +146,7 @@ export default function RankingTab({ canteens, canteenId, active }) {
               <div style={{ ...styles.rankMeta, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
                 <span style={mensaTag}>📍 {canteenName(r.canteen_id)}</span>
                 {/* Am Pastateller steht im Namen nur die Soße – die Nudeln gibt es immer dazu */}
-                {/pasta/i.test(r.category || "") && <span style={{ ...mensaTag, background: C.track, color: C.text }}>🍝 Pastateller · mit Nudeln</span>}
+                {/pasta/i.test(r.category || "") && <span style={{ ...mensaTag, background: C.track, color: C.text }}>🍝 Nudelteller</span>}
                 <span>zuletzt {formatDate(r.last_served)}</span>
               </div>
               <VariantLine v={byVariant[`${r.canteen_id}|${dishName(r.meal_name)}`]} />

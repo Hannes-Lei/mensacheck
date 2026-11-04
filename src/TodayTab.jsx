@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "./supabase.js";
 import {
-  todayBerlin, daysAgo, isWeekend, lastMensaDay, formatPrice, formatAvg, dayLabel, friendlyError, dishKey, dishName, sameDish, shortDate, isPastaExtra, isPlaceholderMeal, cleanSidesAndAllergens, mealGroup,
+  todayBerlin, daysAgo, isWeekend, lastMensaDay, formatPrice, formatAvg, dayLabel, friendlyError, dishKey, dishName, sameDish, mealVariants, variantLabel, variantIcon, NO_TOPPING, shortDate, isPastaExtra, isPlaceholderMeal, cleanSidesAndAllergens, mealGroup,
 } from "./helpers.js";
 import { Stars, StarLine, Chip, DietBadge, Avatar, formatStars, styles, C, FONT_HEAD } from "./ui.jsx";
 import { CommentItem, THREAD_SELECT } from "./Interactions.jsx";
@@ -97,7 +97,7 @@ const scoreEmpty = { gap: 6, fontSize: 13, color: C.faint };
 // ---- Karte für ein Gericht -------------------------------------------------
 function MealCard({
   meal: m, stats, total, mine, isFavorite, canRate, isFuture, friendRatings = [],
-  onRate, onComment, onRemove, onFavorite, onShare, needLogin, canteenId, date, today, compact = false,
+  onRate, onComment, onRemove, onFavorite, onShare, onVariant, needLogin, canteenId, date, today, compact = false,
   thread, dishes,
 }) {
   const [showAllergens, setShowAllergens] = useState(false);
@@ -107,9 +107,22 @@ function MealCard({
   const [saving, setSaving] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
 
+  // Wok: Fleisch oder veggie? Erst auswählen, dann Sterne
+  const variants = mealVariants(m);
+  const [picked, setPicked] = useState(null);
+  const variant = mine?.variant || picked;
+  const sideList = variants ? m.sides.filter((x) => !variants.some((v) => v.value === x)) : m.sides;
+
   function handleRate(stars) {
     if (!canRate) return needLogin();
-    onRate(m, stars);
+    if (variants && !variant) { thread?.showToast?.("Wähle zuerst, wie du den Wok hattest 🍚 / 🍗 / 🥦"); return; }
+    onRate(m, stars, variant || null);
+  }
+
+  function pickVariant(v) {
+    if (!canRate) return needLogin();
+    setPicked(v);
+    if (mine?.stars && mine.variant !== v) onVariant(m, v);
   }
 
   function startComment() {
@@ -140,13 +153,17 @@ function MealCard({
             <DietBadge diet={m.diet} />
           </div>
           <h3 style={{ ...styles.mealName, ...(compact ? { fontSize: 15 } : {}) }}>{m.name}</h3>
-          {m.sides.length > 0 && <p style={styles.sides}>mit {m.sides.join(", ")}</p>}
+          {/* beim Wok stehen die Toppings unten zur Auswahl, hier nur die übrigen Beilagen */}
+          {sideList.length > 0 && <p style={styles.sides}>mit {sideList.join(", ")}</p>}
         </div>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
           {formatPrice(m.price) && (
             <div style={styles.price}>
               {formatPrice(m.price)}
               <span style={styles.priceLabel}>Studierende</span>
+              {m.toppingPrice != null && (
+                <span style={{ ...styles.priceLabel, marginTop: 2, textTransform: "none", letterSpacing: 0 }}>mit Topping {formatPrice(m.toppingPrice)}</span>
+              )}
             </div>
           )}
           <button
@@ -170,6 +187,17 @@ function MealCard({
 
       <ScoreBar total={total} day={stats} date={date} today={today} compact={compact} />
 
+      {variants && !isFuture && (
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, marginTop: 10 }} role="group" aria-label="Was hattest du dazu?">
+          <span style={{ fontSize: 13, fontWeight: 700, color: C.muted, marginRight: 2 }}>Was hattest du?</span>
+          {variants.map((v) => (
+            <Chip key={v.value} active={variant === v.value} onClick={() => pickVariant(v.value)} aria-pressed={variant === v.value}>
+              {v.icon} {v.label}
+            </Chip>
+          ))}
+        </div>
+      )}
+
       <div style={styles.rateRow}>
         <span style={{ fontSize: 13, fontWeight: 700, color: C.muted }}>
           {isFuture ? "Bewerten ab dem Tag" : mine?.stars ? "Deine Bewertung" : "Wie war's?"}
@@ -185,6 +213,7 @@ function MealCard({
             <span key={f.name} style={friendChip}>
               <Avatar name={f.name} path={f.avatar} size={18} />
               <strong style={{ color: C.text }}>{f.name}</strong>
+              {f.variant && <span title={f.variant === NO_TOPPING ? "ohne Topping" : variantLabel(f.variant)}>{variantIcon(f.variant)}</span>}
               <span style={{ color: C.gold }}>★</span>{formatStars(f.stars)}
               {f.date !== date && <span style={{ color: C.faint, fontSize: 11 }}>{shortDate(f.date)}</span>}
             </span>
@@ -395,7 +424,7 @@ export default function TodayTab({
       .eq("canteen_id", canteenId)
       .eq("meal_date", date);
     const mineReq = userId
-      ? supabase.from("ratings").select("meal_name, stars, comment")
+      ? supabase.from("ratings").select("meal_name, stars, comment, variant")
           .eq("user_id", userId).eq("canteen_id", canteenId).eq("meal_date", date)
       : Promise.resolve({ data: [] });
     const ratedReq = supabase
@@ -444,7 +473,7 @@ export default function TodayTab({
       .eq("canteen_id", canteenId)
       .in("dish", keys);
     const friendsReq = friendIds.length
-      ? supabase.from("ratings").select("user_id, dish, stars, meal_date")
+      ? supabase.from("ratings").select("user_id, dish, stars, meal_date, variant")
           .eq("canteen_id", canteenId).in("dish", keys).in("user_id", friendIds)
           .order("meal_date", { ascending: false }).limit(1000)
       : Promise.resolve({ data: [] });
@@ -466,7 +495,7 @@ export default function TodayTab({
       if (!friends?.has(r.user_id) || seen.has(r.dish + "|" + r.user_id)) continue;
       seen.add(r.dish + "|" + r.user_id);
       (out[r.dish] ||= []).push({
-        name: friends.get(r.user_id), avatar: avatars?.get(r.user_id), stars: r.stars, date: r.meal_date,
+        name: friends.get(r.user_id), avatar: avatars?.get(r.user_id), stars: r.stars, date: r.meal_date, variant: r.variant,
       });
     }
     return out;
@@ -487,11 +516,11 @@ export default function TodayTab({
   // wird diese Bewertung geändert statt eine zweite angelegt.
   const savedName = (meal) => mineOf(meal.name)?.meal_name || meal.name;
 
-  async function saveRating(meal, stars, comment) {
+  async function saveRating(meal, stars, comment, variant = mineOf(meal.name)?.variant ?? null) {
     const { error: err } = await supabase.from("ratings").upsert(
       {
         user_id: userId, canteen_id: canteenId, meal_date: date, meal_name: savedName(meal),
-        category: meal.category, price: meal.price, stars, comment: comment || null,
+        category: meal.category, price: meal.price, stars, comment: comment || null, variant,
       },
       { onConflict: "user_id,canteen_id,meal_date,meal_name" }
     );
@@ -499,11 +528,12 @@ export default function TodayTab({
     return true;
   }
 
-  async function rate(meal, stars) {
+  async function rate(meal, stars, variant = null) {
     const k = mineKey(meal.name);
     const before = mine[k];
-    setMine((p) => ({ ...p, [k]: { ...before, meal_name: before?.meal_name || meal.name, stars } }));
-    const ok = await saveRating(meal, stars, before?.comment);
+    const v = variant ?? before?.variant ?? null;
+    setMine((p) => ({ ...p, [k]: { ...before, meal_name: before?.meal_name || meal.name, stars, variant: v } }));
+    const ok = await saveRating(meal, stars, before?.comment, v);
     if (!ok) setMine((p) => ({ ...p, [k]: before }));
     else if (!before?.stars) onActivity(); // neue Bewertung -> vielleicht neues Abzeichen
     loadRatings();
@@ -524,6 +554,17 @@ export default function TodayTab({
     } else {
       showToast("Bewertung entfernt.");
     }
+    loadRatings();
+  }
+
+  // Wok: nachträglich ändern, was man dazu hatte
+  async function changeVariant(meal, variant) {
+    const k = mineKey(meal.name);
+    const before = mine[k];
+    if (!before?.stars) return;
+    setMine((p) => ({ ...p, [k]: { ...before, variant } }));
+    const ok = await saveRating(meal, before.stars, before.comment, variant);
+    if (!ok) setMine((p) => ({ ...p, [k]: before }));
     loadRatings();
   }
 
@@ -689,6 +730,7 @@ export default function TodayTab({
     onRate: rate,
     onComment: comment,
     onRemove: removeRating,
+    onVariant: changeVariant,
     onShare: share,
     friendRatings: variants(m.name).flatMap((k) => friendsByDish[k] || []),
     thread: { userId, username, friends, needLogin, showToast, noTextLimit },

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { supabase } from "./supabase.js";
-import { formatAvg, formatDate, todayBerlin } from "./helpers.js";
+import { formatAvg, formatDate, todayBerlin, isMeatless } from "./helpers.js";
 import { FONT_HEAD, C } from "./ui.jsx";
 
 // ============================================================================
@@ -35,8 +35,6 @@ export function wrappedPeriods(today = todayBerlin()) {
 }
 
 const inPeriod = (p) => (r) => r.meal_date >= p.start && r.meal_date <= p.end;
-const MEAT = /fleisch|hack|schwein|rind|kalb|lamm|wild|geflügel|hähnchen|huhn|chicken|pute|ente|schinken|speck|bacon|salami|wurst|würst|chorizo|kassler|leberkäse|frikadelle|bulette|cevapcici|döner|bolognese|fisch|lachs|scholle|kabeljau|forelle|hering|matjes|garnele|shrimp|calamari|muschel|thunfisch|seelachs|schnitzel|gulasch|roulade|braten|steak|geschnetzeltes/i;
-const NOT_MEAT = /tofu|soja|seitan|vegetar|veggie|vegan|planted|pflanz|fleischlos|like /i;
 
 // Alles ausrechnen, was in den Rückblick kommt
 function computeWrapped(mine, all, userId, friends, canteenName) {
@@ -50,7 +48,7 @@ function computeWrapped(mine, all, userId, friends, canteenName) {
   const worst = [...mine].sort((a, b) => a.stars - b.stars || (a.meal_date < b.meal_date ? 1 : -1))[0];
   const avg = n ? mine.reduce((s, r) => s + Number(r.stars), 0) / n : 0;
   const comments = mine.filter((r) => r.comment).length;
-  const meatless = n ? Math.round((mine.filter((r) => !MEAT.test(r.meal_name) || NOT_MEAT.test(r.meal_name)).length / n) * 100) : 0;
+  const meatless = n ? Math.round((mine.filter(isMeatless).length / n) * 100) : 0;
   const wd = {};
   for (const d of days) { const k = new Date(d + "T12:00:00Z").getUTCDay(); wd[k] = (wd[k] || 0) + 1; }
   const favDay = Object.entries(wd).sort((a, b) => b[1] - a[1])[0];

@@ -182,7 +182,7 @@ export default function ProfileTab({
 
     supabase
       .from("ratings")
-      .select("id, canteen_id, meal_date, meal_name, category, stars, comment")
+      .select("id, canteen_id, meal_date, meal_name, category, stars, comment, variant")
       .eq("user_id", userId)
       .order("meal_date", { ascending: false })
       .limit(1000)

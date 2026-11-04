@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from "./supabase.js";
-import { timeAgo, friendlyError } from "./helpers.js";
+import { timeAgo, friendlyError, variantLabel, variantIcon, NO_TOPPING } from "./helpers.js";
 import { StarLine, formatStars, Avatar, styles, C } from "./ui.jsx";
 
 // ============================================================================
@@ -36,7 +36,7 @@ export const EMOJIS = ["👍", "❤️", "😂", "😋", "🤢", "😮"];
 
 // Diese Felder holen wir mit jeder Bewertung zusammen aus der Datenbank
 export const THREAD_SELECT =
-  "id, user_id, canteen_id, meal_date, meal_name, stars, comment, created_at, " +
+  "id, user_id, canteen_id, meal_date, meal_name, stars, comment, variant, created_at, " +
   // "!user_id": den Namen über ratings.user_id holen. Ohne den Zusatz weiß
   // Supabase nicht, welcher Weg gemeint ist (es gäbe auch den über reactions).
   "profiles!user_id(username, avatar_path), " +
@@ -328,6 +328,11 @@ export function CommentItem({ item, userId, username, friends, needLogin, showTo
           <StarLine value={item.stars} size={13} />
           <span style={{ color: C.faint, fontSize: 12 }}>{formatStars(item.stars)} · {dayNote || timeAgo(item.created_at)}</span>
         </div>
+        {item.variant && (
+          <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
+            {variantIcon(item.variant)} {item.variant === NO_TOPPING ? "ohne Topping" : `mit ${variantLabel(item.variant)}`}
+          </div>
+        )}
         <p style={{ margin: "4px 0 0", lineHeight: 1.4, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}><LongText text={item.comment} /></p>
       </div>
   );

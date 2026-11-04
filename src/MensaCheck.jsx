@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "./supabase.js";
 import { dishKey, friendlyError, BADGES, computeStats } from "./helpers.js";
 import { styles, globalCss, C, Avatar } from "./ui.jsx";
@@ -210,7 +210,7 @@ export default function MensaCheck() {
   const checkBadges = useCallback(async (silent = false) => {
     if (!userId) return;
     const { data } = await supabase.from("ratings")
-      .select("canteen_id, meal_date, meal_name, category, stars, comment").eq("user_id", userId).limit(5000);
+      .select("canteen_id, meal_date, meal_name, category, stars, comment, variant").eq("user_id", userId).limit(5000);
     const stats = computeStats(data || []);
     const earned = BADGES.filter((b) => stats[b.metric] >= b.goal).map((b) => b.id);
 
@@ -249,9 +249,11 @@ export default function MensaCheck() {
     [favoritesList]
   );
 
+  const toastTimer = useRef(null);
   function showToast(text) {
     setToast(text);
-    setTimeout(() => setToast(null), 3500);
+    clearTimeout(toastTimer.current); // ein neuer Hinweis bleibt die vollen 3,5 Sekunden
+    toastTimer.current = setTimeout(() => setToast(null), 3500);
   }
 
   function changeCanteen(id) {

@@ -75,7 +75,8 @@ export function shortDate(iso) {
 // Hängende Wörter am Ende („… auf", „… mit,") zählen nicht – gleiche Regel wie
 // dish_key in Supabase (SQL 15), sonst passen die Bewertungen nicht zusammen.
 const DANGLING = /(?:[\s,;:–-]+(?:auf|mit|an|und|dazu|in|im|vom|von|aus|zu|nach|sowie|oder))*[\s,;:–-]*$/;
-export function dishName(mealName) {
+// Gerichtname zum Vergleichen: klein, ohne Anführungszeichen, ohne hängende Wörter
+export function dishText(mealName) {
   return String(mealName || "")
     .replace(/["„“”'`´]/g, "")
     .toLowerCase()
@@ -83,13 +84,18 @@ export function dishName(mealName) {
     .trim()
     .replace(DANGLING, "");
 }
+// Schlüssel eines Gerichts: zusätzlich ohne Leerzeichen und Bindestriche, damit
+// „Pilz Gemüsepfanne" und „Pilz Gemüse-Pfanne" dasselbe sind (= dish_key in SQL 17)
+export function dishName(mealName) {
+  return dishText(mealName).replace(/[\s-]+/g, "");
+}
 
 // Fast gleicher Name? Für Gerichte, die das Studentenwerk im Laufe des Tages
 // umbenennt („Quarkkeulchen mit Apfelmus" → „sächsische Quarkkeulchen mit Apfelmus").
 // Alle Wörter des kürzeren Namens müssen im längeren stecken, höchstens 2 Wörter
 // mehr. Wörter mit gleichem Anfang („Tomatensoße"/„Tomatensosse") zählen als gleich.
 // Gleiche Regel wie dish_similar in Supabase (SQL 16).
-const dishWords = (n) => dishName(n).split(/[\s-]+/).filter(Boolean);
+const dishWords = (n) => dishText(n).split(/[\s-]+/).filter(Boolean);
 function wordMatch(x, y) {
   if (x === y) return true;
   let i = 0;
@@ -155,7 +161,7 @@ export function computeStats(ratings) {
     canteens: new Set(ratings.map((r) => r.canteen_id)).size,
     days: dates.length,
     dishes: new Set(ratings.map((r) => name(r).trim().toLowerCase()).filter(Boolean)).size,
-    meatless: ratings.filter((r) => name(r) && (!MEAT_WORDS.test(name(r)) || MEAT_SUBST.test(name(r)))).length,
+    meatless: ratings.filter(isMeatless).length,
     pasta: ratings.filter((r) => (r.category ? /pasta/i.test(r.category) : PASTA_DISH.test(name(r)))).length,
     fivestars: ratings.filter((r) => Number(r.stars) >= 5).length,
     streak: longestStreak(dates),
@@ -230,4 +236,29 @@ export function mealGroup(m) {
   if (m.diet === "vegan" || m.diet === "vegetarisch" || /vegan|vegetar/i.test(cat)) return 1;
   if (/fleisch|fisch|geflügel/i.test(cat) || (MEAT_WORDS.test(m.name || "") && !MEAT_SUBST.test(m.name || ""))) return 0;
   return 3;
+}
+
+// ---- Wok: ohne Topping, mit Fleisch oder veggie? ---------------------------
+// Den Wok gibt es ohne Topping (meist 2,50 €) oder mit Topping (meist 3,50 €),
+// dabei meist ein Fleisch- und ein veggie Angebot, z.B. „mit Putengeschnetzeltes …,
+// Brokkoli Knuspernuggets (vegetarisch)". Beim Bewerten wählt man, was man hatte.
+export const NO_TOPPING = "ohne Topping";
+const VEG_MARK = /\((vegetarisch|vegan)\)/i;
+export const variantIsVeg = (s) => VEG_MARK.test(s || "") || MEAT_SUBST.test(s || "") || !MEAT_WORDS.test(s || "");
+export const variantLabel = (s) => String(s || "").replace(/\s*\((vegetarisch|vegan)\)\s*/gi, " ").trim();
+export const variantIcon = (s) => (s === NO_TOPPING ? "🍚" : variantIsVeg(s) ? "🥦" : "🍗");
+export function mealVariants(m) {
+  if (!/wok/i.test(m?.category || "")) return null;
+  const toppings = (m.sides || []).filter((x) => VEG_MARK.test(x) || MEAT_SUBST.test(x) || MEAT_WORDS.test(x));
+  if (toppings.length === 0) return null;
+  return [NO_TOPPING, ...toppings].map((x) => ({ value: x, label: x === NO_TOPPING ? "Ohne Topping" : variantLabel(x), icon: variantIcon(x) }));
+}
+
+// Ohne Fleisch gegessen? Wok ohne Topping ist immer vegetarisch, bei einem
+// Topping zählt das Topping, sonst der Name.
+export function isMeatless(r) {
+  if (r.variant === NO_TOPPING) return true;
+  if (r.variant) return variantIsVeg(r.variant);
+  const n = r.meal_name || "";
+  return !!n && (!MEAT_WORDS.test(n) || MEAT_SUBST.test(n));
 }

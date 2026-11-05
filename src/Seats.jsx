@@ -51,7 +51,7 @@ const spin = (o) => (o.rot ? `rotate(${o.rot} ${o.x + (o.w ?? o.s) / 2} ${o.y + 
 // ---- Der Grundriss ----------------------------------------------------------
 // Füllt den freien Platz im Fenster. Am Anfang ist leicht hineingezoomt, so
 // dass fast alle Tische zu sehen sind (layout.start = { zoom, align } passt das
-// je Mensa an: zoom 1 = alle Tische, 0.88 = 12 % näher; align "left"/"top" =
+// je Mensa an: zoom "all" = ganzer Plan, 1 = alle Tische, 0.88 = 12 % näher; align "left"/"top" =
 // links bzw. oben anfangen statt mittig). Mit zwei Fingern (oder Strg + Mausrad) zoomen, mit
 // einem Finger verschieben, Tippen wählt den nächstgelegenen Tisch.
 // „Alle Tische" zeigt alle Tische auf einmal.
@@ -114,9 +114,14 @@ function SeatMap({ layout, labels, mineAt, selected, onPick }) {
     const w = Math.min(maxW, Math.max(minW, v.w));
     return center({ ...v, w, h: w / A });
   }
+  // Breite der Ansicht; zoom "all" = ganzer Plan. Fehlt nur wenig (< 10 %)
+  // zum ganzen Plan, wird gleich der ganze Plan gezeigt (kein Verschieben nötig).
   function viewW(A, zoom = layout.start?.zoom ?? START_ZOOM) {
+    const whole = Math.max(vw, vh * A);
+    if (zoom === "all") return whole;
     const f = focusBox(layout, full);
-    return Math.min(Math.max(f.w, f.h * A) * zoom, Math.max(vw, vh * A));
+    const w = Math.max(f.w, f.h * A) * zoom;
+    return w >= whole * 0.9 ? whole : w;
   }
 
   // Größe der Fläche messen; beim ersten Mal die Startansicht setzen

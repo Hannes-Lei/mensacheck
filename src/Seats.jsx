@@ -49,11 +49,14 @@ const areaStyle = (a) =>
 const spin = (o) => (o.rot ? `rotate(${o.rot} ${o.x + (o.w ?? o.s) / 2} ${o.y + (o.h ?? o.s) / 2})` : undefined);
 
 // ---- Der Grundriss ----------------------------------------------------------
-// Füllt den freien Platz im Fenster. Am Anfang sind alle Tische zu sehen
-// (die Pläne selbst sind ans Handy-Format angepasst, planung/fit_phone.py).
-// Mit zwei Fingern (oder Strg + Mausrad) zoomen, mit einem Finger verschieben,
-// Tippen wählt den nächstgelegenen Tisch. „Alle Tische" springt zurück.
-const MAX_ZOOM = 4;          // so weit kann man gegenüber der Startansicht hineinzoomen
+// Füllt den freien Platz im Fenster. Am Anfang ist leicht hineingezoomt, so
+// dass fast alle Tische zu sehen sind (layout.start = { zoom, align } passt das
+// je Mensa an: zoom 1 = alle Tische, 0.88 = 12 % näher; align "left"/"top" =
+// links bzw. oben anfangen statt mittig). Mit zwei Fingern (oder Strg + Mausrad) zoomen, mit
+// einem Finger verschieben, Tippen wählt den nächstgelegenen Tisch.
+// „Alle Tische" zeigt alle Tische auf einmal.
+const MAX_ZOOM = 3;          // so weit kann man gegenüber der Startansicht hineinzoomen
+const START_ZOOM = 0.88;     // Standard: 12 % näher als „alle Tische"
 const FOCUS_MARGIN = 14;     // Rand um die Tische in der Startansicht
 
 // Bereich mit Tischen (layout.focus = "x y w h" überschreibt die Berechnung)
@@ -89,11 +92,14 @@ function SeatMap({ layout, labels, mineAt, selected, onPick }) {
   const onPickRef = useRef(onPick);
   onPickRef.current = onPick;
 
-  // Startansicht: alle Tische sichtbar, mittig
-  function startView(A = aspectRef.current) {
+  // Startansicht (zoom = layout.start.zoom) bzw. alle Tische (zoom = 1)
+  function startView(A = aspectRef.current, zoom) {
     const f = focusBox(layout, full);
-    const w = startView0W(A), h = w / A;
-    return clamp({ w, h, x: f.x + (f.w - w) / 2, y: f.y + (f.h - h) / 2 }, A);
+    const w = viewW(A, zoom), h = w / A;
+    const align = zoom == null ? layout.start?.align || "" : "";
+    const x = align.includes("left") ? f.x : f.x + (f.w - w) / 2;
+    const y = align.includes("top") ? f.y : f.y + (f.h - h) / 2;
+    return clamp({ w, h, x, y }, A);
   }
   // größer als der Plan -> mittig; sonst nicht über den Rand hinaus schieben
   function center(v) {
@@ -104,11 +110,14 @@ function SeatMap({ layout, labels, mineAt, selected, onPick }) {
     };
   }
   function clamp(v, A = aspectRef.current) {
-    const maxW = Math.max(vw, vh * A), minW = startView0W(A) / MAX_ZOOM;
+    const maxW = Math.max(vw, vh * A), minW = viewW(A) / MAX_ZOOM;
     const w = Math.min(maxW, Math.max(minW, v.w));
     return center({ ...v, w, h: w / A });
   }
-  function startView0W(A) { const f = focusBox(layout, full); return Math.min(Math.max(f.w, f.h * A), Math.max(vw, vh * A)); }
+  function viewW(A, zoom = layout.start?.zoom ?? START_ZOOM) {
+    const f = focusBox(layout, full);
+    return Math.min(Math.max(f.w, f.h * A) * zoom, Math.max(vw, vh * A));
+  }
 
   // Größe der Fläche messen; beim ersten Mal die Startansicht setzen
   useLayoutEffect(() => {
@@ -128,7 +137,7 @@ function SeatMap({ layout, labels, mineAt, selected, onPick }) {
   }, [layout]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const canPan = aspect != null && (view.w < vw - 0.5 || view.h < vh - 0.5);
-  const zoomed = aspect != null && view.w < startView0W(aspect) * 0.97;
+  const zoomed = aspect != null && view.w < viewW(aspect, 1) * 0.97;
 
   // Bildschirm-Punkt -> Plan-Koordinaten (Ansicht füllt die Fläche genau)
   function box() {
@@ -356,7 +365,7 @@ function SeatMap({ layout, labels, mineAt, selected, onPick }) {
       </svg>
       {zoomed && (
         <button
-          type="button" onClick={() => setView(startView())}
+          type="button" onClick={() => setView(startView(aspectRef.current, 1))}
           style={{ position: "absolute", right: 8, bottom: 8, border: `1px solid ${C.border}`, background: C.card, color: C.text, borderRadius: 18, padding: "6px 12px", fontSize: 13, fontWeight: 700, cursor: "pointer", boxShadow: "0 1px 4px rgba(0,0,0,.12)" }}
         >⤢ Alle Tische</button>
       )}
@@ -529,7 +538,7 @@ export function SeatSheet({ onClose, userId, checkins, names, canteens, homeCant
               <button type="button" style={styles.ghostBtn} onClick={checkOut} disabled={busy}>Bin weg</button>
             </>
           ) : layout ? (
-            <div style={{ fontSize: 14, color: C.muted, textAlign: "center", padding: 8 }}>Tisch antippen · mit zwei Fingern zoomen</div>
+            <div style={{ fontSize: 14, color: C.muted, textAlign: "center", padding: 8 }}>Tisch antippen · Plan verschieben und zoomen</div>
           ) : (
             <>
               <button type="button" style={styles.primaryBtn} onClick={() => checkIn(null)} disabled={busy}>

@@ -372,6 +372,8 @@ export default function TodayTab({
 
   const [days, setDays] = useState([]);           // letzter Mensatag + kommende Tage
   const [date, setDate] = useState(null);
+  const dateRef = useRef(null); // zuletzt gewählter Tag (für den Mensa-Wechsel)
+  useEffect(() => { if (date) dateRef.current = date; }, [date]);
   const [anchor, setAnchor] = useState(null);     // dieser Tag steht nach dem Laden ganz links
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -413,9 +415,13 @@ export default function TodayTab({
         const start = upcoming.some((d) => d.date === today) ? today
           : isWeekend(today) && past ? past.date
           : upcoming[0]?.date || past?.date || null;
-        setDays(past ? [past, ...upcoming] : upcoming);
-        setDate(start);
-        setAnchor(start);
+        const list = past ? [past, ...upcoming] : upcoming;
+        setDays(list);
+        // Beim Mensa-Wechsel den gewählten Tag behalten, wenn die neue Mensa an
+        // dem Tag geöffnet hat – sonst wie bisher heute (bzw. nächster Tag)
+        const keep = dateRef.current && list.some((d) => d.date === dateRef.current) ? dateRef.current : start;
+        setDate(keep);
+        setAnchor(keep < start ? keep : start);   // Tagesleiste wie gewohnt: heute steht links
       })
       .catch((e) => !cancelled && setError(e.message))
       .finally(() => !cancelled && setLoading(false));
@@ -665,7 +671,13 @@ export default function TodayTab({
     const chip = row?.querySelector(`[data-day="${anchor}"]`);
     if (!active || !row || !chip || row.offsetWidth === 0) return; // unsichtbar -> später
     row.scrollLeft = chip.getBoundingClientRect().left - row.getBoundingClientRect().left + row.scrollLeft;
-  }, [days, anchor, active]);
+    // gewählter Tag weiter rechts (z.B. nach Mensa-Wechsel behalten) -> ins Bild holen
+    const sel = date && row.querySelector(`[data-day="${date}"]`);
+    if (sel) {
+      const over = sel.getBoundingClientRect().right - row.getBoundingClientRect().right;
+      if (over > 0) row.scrollLeft += over + 8;
+    }
+  }, [days, anchor, active]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Nach jeder Tagesauswahl wieder die Startansicht: "Heute" ganz links,
   // der letzte Mensatag verschwindet nach links. Nur wenn man genau den

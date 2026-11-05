@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useLayoutEffect, useRef, useMemo } from "react";
 import { supabase } from "./supabase.js";
 import { friendlyError } from "./helpers.js";
 import { seatLayout, SEAT_CANTEENS } from "./seatLayouts.js";
@@ -49,47 +49,108 @@ const areaStyle = (a) =>
 const spin = (o) => (o.rot ? `rotate(${o.rot} ${o.x + (o.w ?? o.s) / 2} ${o.y + (o.h ?? o.s) / 2})` : undefined);
 
 // ---- Der Grundriss ----------------------------------------------------------
-// Füllt den freien Platz im Fenster. Mit zwei Fingern (oder Strg + Mausrad)
-// wird nur der Plan vergrößert, mit einem Finger verschoben, Tippen wählt den
-// nächstgelegenen Tisch.
-const MAX_ZOOM = 3;
+// Füllt den freien Platz im Fenster. Am Anfang füllen die Tische die volle
+// Breite (Ränder ohne Tische dürfen aus dem Bild ragen); mit einem Finger
+// verschieben, mit zwei Fingern (oder Strg + Mausrad) zoomen, Tippen wählt
+// den nächstgelegenen Tisch. „Ganzer Plan" zeigt alles auf einmal.
+const MAX_ZOOM = 3;          // so weit kann man gegenüber der Startansicht hineinzoomen
+const FOCUS_MARGIN = 14;     // Rand um die Tische in der Startansicht
+
+// Bereich mit Tischen (layout.focus = "x y w h" überschreibt die Berechnung)
+function focusBox(layout, full) {
+  if (layout.focus) { const [x, y, w, h] = layout.focus.split(" ").map(Number); return { x, y, w, h }; }
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const t of layout.tables) {
+    const cx = t.x + t.w / 2, cy = t.y + t.h / 2, r = Math.hypot(t.w, t.h) / 2;
+    const a = ((t.rot || 0) * Math.PI) / 180;
+    const ex = Math.abs(Math.cos(a)) * t.w / 2 + Math.abs(Math.sin(a)) * t.h / 2;
+    const ey = Math.abs(Math.sin(a)) * t.w / 2 + Math.abs(Math.cos(a)) * t.h / 2;
+    x0 = Math.min(x0, cx - Math.min(ex, r)); x1 = Math.max(x1, cx + Math.min(ex, r));
+    y0 = Math.min(y0, cy - Math.min(ey, r)); y1 = Math.max(y1, cy + Math.min(ey, r));
+  }
+  if (!isFinite(x0)) return full;
+  x0 = Math.max(full.x, x0 - FOCUS_MARGIN); y0 = Math.max(full.y, y0 - FOCUS_MARGIN);
+  x1 = Math.min(full.x + full.w, x1 + FOCUS_MARGIN); y1 = Math.min(full.y + full.h, y1 + FOCUS_MARGIN);
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
 
 function SeatMap({ layout, labels, mineAt, selected, onPick }) {
   const ref = useRef(null);
+  const wrapRef = useRef(null);
   const [vx, vy, vw, vh] = layout.viewBox.split(" ").map(Number);
   const full = { x: vx, y: vy, w: vw, h: vh };
+  const [aspect, setAspect] = useState(null);            // Breite / Höhe der Fläche
   const [view, setView] = useState(full);
   const viewRef = useRef(view);
   viewRef.current = view;
+  const aspectRef = useRef(aspect);
+  aspectRef.current = aspect;
   const gesture = useRef({ pointers: new Map(), moved: false });
-  const zoomed = view.w < vw - 0.5;
   const onPickRef = useRef(onPick);
   onPickRef.current = onPick;
 
-  // Bildschirm-Punkt -> Plan-Koordinaten (Plan waagerecht mittig, oben bündig eingepasst)
+  // Ganzer Plan bzw. Startansicht für das aktuelle Seitenverhältnis
+  function wholeView(A = aspectRef.current) {
+    const w = Math.max(vw, vh * A);
+    return center({ w, h: w / A, x: vx, y: vy });
+  }
+  function startView(A = aspectRef.current) {
+    const f = focusBox(layout, full);
+    // Breite Pläne (z.B. Galerie) dürfen seitlich etwas aus dem Bild ragen,
+    // damit sie die Höhe besser nutzen – höchstens 30 % der Tischfläche
+    let w = Math.max(f.w * 0.7, Math.min(f.w, f.h * A)), h = w / A;
+    if (h > f.h) return clamp({ w, h, x: f.x, y: f.y + (f.h - h) / 2 }, A);   // passt komplett -> mittig
+    return clamp({ w, h, x: f.x, y: f.y }, A);                                // oben anfangen, nach unten schieben
+  }
+  // größer als der Plan -> mittig; sonst nicht über den Rand hinaus schieben
+  function center(v) {
+    return {
+      ...v,
+      x: v.w >= vw ? vx + (vw - v.w) / 2 : Math.min(vx + vw - v.w, Math.max(vx, v.x)),
+      y: v.h >= vh ? vy + (vh - v.h) / 2 : Math.min(vy + vh - v.h, Math.max(vy, v.y)),
+    };
+  }
+  function clamp(v, A = aspectRef.current) {
+    const maxW = Math.max(vw, vh * A), minW = startView0W(A) / MAX_ZOOM;
+    const w = Math.min(maxW, Math.max(minW, v.w));
+    return center({ ...v, w, h: w / A });
+  }
+  function startView0W(A) { const f = focusBox(layout, full); return Math.max(f.w * 0.7, Math.min(f.w, f.h * A)); }
+
+  // Größe der Fläche messen; beim ersten Mal die Startansicht setzen
+  useLayoutEffect(() => {
+    const el = wrapRef.current;
+    const measure = () => {
+      const r = el.getBoundingClientRect();
+      if (!r.width || !r.height) return;
+      const A = r.width / r.height;
+      const first = aspectRef.current == null;
+      aspectRef.current = A; setAspect(A);
+      setView((v) => (first ? startView(A) : clamp({ ...v, w: v.w }, A)));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [layout]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const canPan = aspect != null && (view.w < vw - 0.5 || view.h < vh - 0.5);
+  const atWhole = aspect != null && view.w >= Math.max(vw, vh * aspect) - 0.5;
+
+  // Bildschirm-Punkt -> Plan-Koordinaten (Ansicht füllt die Fläche genau)
   function box() {
     const r = ref.current.getBoundingClientRect();
-    const rw = Math.min(r.width, (r.height * vw) / vh);
-    return { left: r.left + (r.width - rw) / 2, top: r.top, rw }; // waagerecht mittig, oben bündig
+    return { left: r.left, top: r.top, rw: r.width, rh: r.height };
   }
   function toPlan(cx, cy, v = viewRef.current) {
     const b = box();
-    return { x: v.x + ((cx - b.left) / b.rw) * v.w, y: v.y + ((cy - b.top) / b.rw) * v.w };
-  }
-  function clamp(v) {
-    const w = Math.min(vw, Math.max(vw / MAX_ZOOM, v.w));
-    const h = (w * vh) / vw;
-    return {
-      w, h,
-      x: Math.min(vx + vw - w, Math.max(vx, v.x)),
-      y: Math.min(vy + vh - h, Math.max(vy, v.y)),
-    };
+    return { x: v.x + ((cx - b.left) / b.rw) * v.w, y: v.y + ((cy - b.top) / b.rh) * v.h };
   }
   // Zoomen um einen festen Punkt (anchor bleibt unter dem Finger)
   function zoomAt(anchor, cx, cy, newW) {
-    const b = box();
-    const w = Math.min(vw, Math.max(vw / MAX_ZOOM, newW));
-    setView(clamp({ w, x: anchor.x - ((cx - b.left) / b.rw) * w, y: anchor.y - ((cy - b.top) / b.rw) * w }));
+    const b = box(), A = aspectRef.current;
+    const v = clamp({ w: newW, x: 0, y: 0 });
+    setView(clamp({ w: v.w, x: anchor.x - ((cx - b.left) / b.rw) * v.w, y: anchor.y - ((cy - b.top) / b.rh) * (v.w / A) }));
   }
 
   function pickAt(cx, cy) {
@@ -160,8 +221,8 @@ function SeatMap({ layout, labels, mineAt, selected, onPick }) {
   function onPointerMove(e) { if (isMouse(e)) move("m", e.clientX, e.clientY); }
   function onPointerUp(e) { if (isMouse(e)) up("m", e.clientX, e.clientY, e.type === "pointercancel"); }
 
-  const zoomedRef = useRef(zoomed);
-  zoomedRef.current = zoomed;
+  const zoomedRef = useRef(canPan);
+  zoomedRef.current = canPan;
 
   // Strg + Mausrad / Trackpad-Zoom am Laptop; Safari-Gesten nicht an die Seite weitergeben
   useEffect(() => {
@@ -210,11 +271,11 @@ function SeatMap({ layout, labels, mineAt, selected, onPick }) {
   );
 
   return (
-    <div style={{ position: "relative", flex: "1 1 auto", minHeight: 320, margin: "0 -8px" }}>
+    <div ref={wrapRef} style={{ position: "relative", flex: "1 1 auto", minHeight: 320, margin: "0 -8px", overflow: "hidden" }}>
       <svg
-        ref={ref} viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`} role="img" aria-label="Grundriss der Mensa" preserveAspectRatio="xMidYMin meet"
+        ref={ref} viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`} role="img" aria-label="Grundriss der Mensa" preserveAspectRatio="xMidYMid meet"
         onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
-        style={{ position: "absolute", inset: 0, width: "100%", height: "100%", display: "block", cursor: zoomed ? "grab" : "pointer", touchAction: "none", userSelect: "none", WebkitUserSelect: "none" }}
+        style={{ position: "absolute", inset: 0, width: "100%", height: "100%", display: "block", cursor: canPan ? "grab" : "pointer", touchAction: "none", userSelect: "none", WebkitUserSelect: "none" }}
       >
         {layout.terrace && (
           <g>
@@ -300,11 +361,11 @@ function SeatMap({ layout, labels, mineAt, selected, onPick }) {
           );
         })}
       </svg>
-      {zoomed && (
+      {aspect != null && (
         <button
-          type="button" onClick={() => setView(full)}
-          style={{ position: "absolute", right: 8, top: 8, border: `1px solid ${C.border}`, background: C.card, color: C.text, borderRadius: 18, padding: "6px 12px", fontSize: 13, fontWeight: 700, cursor: "pointer", boxShadow: "0 1px 4px rgba(0,0,0,.12)" }}
-        >⤢ Ganzer Plan</button>
+          type="button" onClick={() => setView(atWhole ? startView() : wholeView())}
+          style={{ position: "absolute", right: 8, bottom: 8, border: `1px solid ${C.border}`, background: C.card, color: C.text, borderRadius: 18, padding: "6px 12px", fontSize: 13, fontWeight: 700, cursor: "pointer", boxShadow: "0 1px 4px rgba(0,0,0,.12)" }}
+        >{atWhole ? "⤡ Größer" : "⤢ Ganzer Plan"}</button>
       )}
     </div>
   );
@@ -475,7 +536,7 @@ export function SeatSheet({ onClose, userId, checkins, names, canteens, homeCant
               <button type="button" style={styles.ghostBtn} onClick={checkOut} disabled={busy}>Bin weg</button>
             </>
           ) : layout ? (
-            <div style={{ fontSize: 14, color: C.muted, textAlign: "center", padding: 8 }}>Tippe auf deinen Tisch · mit zwei Fingern zoomen</div>
+            <div style={{ fontSize: 14, color: C.muted, textAlign: "center", padding: 8 }}>Tippe auf deinen Tisch · Plan mit dem Finger verschieben</div>
           ) : (
             <>
               <button type="button" style={styles.primaryBtn} onClick={() => checkIn(null)} disabled={busy}>

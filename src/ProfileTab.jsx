@@ -171,7 +171,7 @@ function MyRatingsSheet({ ratings, initial, canteenName, onRemove, onClose }) {
 // ============================================================================
 export default function ProfileTab({
   userId, username, canteens, favoritesList, onToggleFavorite, needLogin, onSignOut, onDeleted = () => {}, friends = new Map(),
-  theme, onThemeChange, active, avatarPath = null, onAvatarChange = () => {}, showToast = () => {},
+  theme, onThemeChange, active, avatarPath = null, onAvatarChange = () => {}, showToast = () => {}, onUsernameChange = () => {},
 }) {
   const [ratings, setRatings] = useState(null);
   const [dishAvg, setDishAvg] = useState({});
@@ -355,7 +355,7 @@ export default function ProfileTab({
       </div>
       {showAccount && (
         <AccountSheet
-          userId={userId} username={username} showToast={showToast}
+          userId={userId} username={username} showToast={showToast} onUsernameChange={onUsernameChange}
           onClose={() => setShowAccount(false)}
           onDeleted={() => { setShowAccount(false); onDeleted(); }}
         />

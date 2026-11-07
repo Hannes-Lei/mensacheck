@@ -194,11 +194,12 @@ export function LegalLinks({ onOpen, style }) {
 }
 
 // ============================================================================
-// Konto & Daten: E-Mail, Passwort ändern, Konto löschen (Warnseite + Passwort)
+// Konto & Daten: E-Mail, Nutzername ändern, Passwort ändern, Konto löschen (Warnseite + Passwort)
 // ============================================================================
-export function AccountSheet({ userId, username, onClose, onDeleted, showToast }) {
+export function AccountSheet({ userId, username, onClose, onDeleted, showToast, onUsernameChange = () => {} }) {
   const [email, setEmail] = useState("");
-  const [step, setStep] = useState("overview"); // overview | password | warn | confirm
+  const [step, setStep] = useState("overview"); // overview | name | password | warn | confirm
+  const [newName, setNewName] = useState(username || "");
   const [pw, setPw] = useState("");
   const [pw2, setPw2] = useState("");
   const [busy, setBusy] = useState(false);
@@ -219,6 +220,25 @@ export function AccountSheet({ userId, username, onClose, onDeleted, showToast }
     if (err) return setError(friendlyError(err));
     setPw(""); setPw2(""); setStep("overview");
     showToast("Passwort geändert.");
+  }
+
+  // Nutzername ändern (2–24 Zeichen; Groß/Klein zählt beim Vergleich nicht)
+  async function changeName(e) {
+    e.preventDefault();
+    setError(null);
+    const name = newName.trim().replace(/\s+/g, " ");
+    if (name === username) return setStep("overview");
+    if (name.length < 2 || name.length > 24) return setError("Der Name braucht 2 bis 24 Zeichen.");
+    setBusy(true);
+    const like = name.replace(/[\\%_]/g, (c) => "\\" + c);
+    const { data: taken } = await supabase.from("profiles").select("id").ilike("username", like).neq("id", userId).limit(1);
+    if (taken?.length) { setBusy(false); return setError("Den Namen gibt es schon. Probier einen anderen."); }
+    const { error: err } = await supabase.from("profiles").update({ username: name }).eq("id", userId);
+    setBusy(false);
+    if (err) return setError(err.code === "23505" ? "Den Namen gibt es schon. Probier einen anderen." : friendlyError(err));
+    onUsernameChange(name);
+    setStep("overview");
+    showToast("Nutzername geändert.");
   }
 
   async function deleteAccount(e) {
@@ -243,7 +263,7 @@ export function AccountSheet({ userId, username, onClose, onDeleted, showToast }
     }
   }
 
-  const back = () => { setStep("overview"); setPw(""); setPw2(""); setError(null); };
+  const back = () => { setStep("overview"); setPw(""); setPw2(""); setError(null); setNewName(username || ""); };
 
   return (
     <div style={{ ...styles.overlay, zIndex: 30 }} onClick={onClose}>
@@ -256,7 +276,11 @@ export function AccountSheet({ userId, username, onClose, onDeleted, showToast }
         {step === "overview" && (
           <>
             <div style={{ fontSize: 14, color: C.muted, margin: "6px 0 16px", lineHeight: 1.6 }}>
-              Angemeldet als <strong style={{ color: C.text }}>{username}</strong><br />
+              Angemeldet als <strong style={{ color: C.text }}>{username}</strong>{" "}
+              <button
+                type="button" onClick={() => { setNewName(username || ""); setStep("name"); }}
+                style={{ background: "none", border: "none", color: C.faint, fontSize: 12, textDecoration: "underline", cursor: "pointer", padding: "0 2px" }}
+              >ändern</button><br />
               E-Mail: {email || "…"}
             </div>
             <button type="button" style={{ ...styles.ghostBtn, width: "100%" }} onClick={() => setStep("password")}>Passwort ändern</button>
@@ -269,6 +293,19 @@ export function AccountSheet({ userId, username, onClose, onDeleted, showToast }
               </button>
             </div>
           </>
+        )}
+
+        {step === "name" && (
+          <form onSubmit={changeName} style={{ marginTop: 10 }}>
+            <label style={styles.field}>
+              <span style={styles.fieldLabel}>Neuer Nutzername</span>
+              <input style={styles.input} value={newName} onChange={(e) => setNewName(e.target.value)} maxLength={24} autoComplete="username" required />
+            </label>
+            <div style={{ fontSize: 13, color: C.muted, margin: "-4px 0 12px" }}>So sehen dich andere bei Bewertungen, im Feed und in Gruppen.</div>
+            {error && <div style={{ ...styles.notice, ...styles.noticeError, marginBottom: 12 }}>{error}</div>}
+            <button type="submit" disabled={busy} style={styles.primaryBtn}>{busy ? "Einen Moment…" : "Speichern"}</button>
+            <button type="button" style={styles.linkBtn} onClick={back}>Zurück</button>
+          </form>
         )}
 
         {step === "password" && (

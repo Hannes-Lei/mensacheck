@@ -250,7 +250,7 @@ export const SEAT_LAYOUTS = {
       { id: "H13", x: 466.8, y: 739.9, w: 52, h: 22 },
       { id: "H14", x: 454.5, y: 818.1, w: 72, h: 26 },
     ],
-    start: { zoom: 0.7, align: "left" },
+    start: { zoom: "all" },
   },
   // Mensa Academica – nach dem Rettungsplan, Tische von Hannes (Oktober 2026, vorerst alles 6er) · HOCHKANT: 90° im Uhrzeigersinn gedreht (Eingang links, Ausgabe rechts)
   //   L = Speisesaal oben (im Rettungsplan links) · R = Speisesaal unten (rechts) · C = Halle (C1–C4) und Terrassen (C5–C12 Ebene 1, C13–C20 Ebene 2, C21–C24 Ebene 3)

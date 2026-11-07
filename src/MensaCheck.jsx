@@ -367,6 +367,7 @@ export default function MensaCheck() {
           active={tab === "me"}
           avatarPath={avatarPath}
           onAvatarChange={(p) => { setAvatarPath(p); reloadGroups(); }}
+          onUsernameChange={(n) => { setUsername(n); reloadGroups(); }}
           showToast={showToast}
         />
       </div>

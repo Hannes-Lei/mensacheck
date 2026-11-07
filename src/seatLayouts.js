@@ -115,7 +115,8 @@ export const SEAT_LAYOUTS = {
   // Mensa Peterssteinweg – nach dem Rettungsplan (Wände schräg wie im Original), Tische von Hannes (Oktober 2026)
   //   B = Behördenspeisesaal (B1–B9 Fensterreihe, B10–B17 Flurseite) · K = Kleiner Speisesaal · H = Historischer Speisesaal
   68: {
-    start: { zoom: "all" },
+    focus: "30 0 975 880",
+    start: { zoom: 1 },
     viewBox: "-12 -12 1024 894",
     room: "M430.8 0.0 L867.6 239.2 L877.2 221.7 L1000.0 289.0 L989.2 429.4 L962.2 428.4 L948.2 869.4 L48.9 870.5 L0.0 852.1 L95.6 677.5 L59.9 677.5 L322.4 197.9 Z",
     roomStroke: false,

@@ -114,14 +114,15 @@ function SeatMap({ layout, labels, mineAt, selected, onPick }) {
     const w = Math.min(maxW, Math.max(minW, v.w));
     return center({ ...v, w, h: w / A });
   }
-  // Breite der Ansicht; zoom "all" = ganzer Plan. Fehlt nur wenig (< 10 %)
-  // zum ganzen Plan, wird gleich der ganze Plan gezeigt (kein Verschieben nötig).
+  // Breite der Ansicht; zoom "all" = ganzer Plan. Fehlt beim Standard-Zoom nur
+  // wenig (< 10 %) zum ganzen Plan, wird gleich der ganze Plan gezeigt. Ist für
+  // die Mensa ein eigener Ausschnitt (layout.focus) gesetzt, gilt genau der.
   function viewW(A, zoom = layout.start?.zoom ?? START_ZOOM) {
     const whole = Math.max(vw, vh * A);
     if (zoom === "all") return whole;
     const f = focusBox(layout, full);
-    const w = Math.max(f.w, f.h * A) * zoom;
-    return w >= whole * 0.9 ? whole : w;
+    const w = Math.min(Math.max(f.w, f.h * A) * zoom, whole);
+    return !layout.focus && w >= whole * 0.9 ? whole : w;
   }
 
   // Größe der Fläche messen; beim ersten Mal die Startansicht setzen

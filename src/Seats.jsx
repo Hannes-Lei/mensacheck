@@ -3,6 +3,7 @@ import { supabase } from "./supabase.js";
 import { friendlyError } from "./helpers.js";
 import { seatLayout, SEAT_CANTEENS } from "./seatLayouts.js";
 import { styles, C } from "./ui.jsx";
+import { kickPush } from "./Push.jsx";
 
 // ============================================================================
 // Sitzplätze: "Wo sitzt ihr?" – Grundriss, Einchecken, Bin weg
@@ -445,6 +446,7 @@ export function SeatSheet({ onClose, userId, checkins, names, canteens, homeCant
     const { error } = await supabase.rpc("check_in", { p_canteen: canteenId, p_table: tableId });
     setBusy(false);
     if (error) return showToast(friendlyError(error));
+    kickPush();   // Freunde benachrichtigen
     setSelected(null);
     await reload(); // der Hinweis unten im Fenster bestätigt das Einchecken
   }

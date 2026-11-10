@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from "./supabase.js";
 import { timeAgo, friendlyError, variantLabel, variantIcon, NO_TOPPING } from "./helpers.js";
 import { StarLine, formatStars, Avatar, styles, C } from "./ui.jsx";
+import { kickPush } from "./Push.jsx";
 
 // ============================================================================
 // Reaktionen (Emojis) und Antworten unter einer Bewertung/einem Kommentar
@@ -110,7 +111,8 @@ export function Interactions({ rating, userId, username, needLogin, showToast, n
     ]);
     const { error } = await supabase.from("reactions")
       .upsert({ rating_id: rating.id, user_id: userId, emoji }, { onConflict: "rating_id,user_id" });
-    if (error) { setReactions(before); showToast(friendlyError(error)); }
+    if (error) { setReactions(before); showToast(friendlyError(error)); return; }
+    if (!mine) kickPush();   // neue Reaktion -> Push an die Person, die bewertet hat
   }
 
   const onTap = useDoubleTap(() => {
@@ -131,6 +133,7 @@ export function Interactions({ rating, userId, username, needLogin, showToast, n
       .single();
     setSending(false);
     if (error) return showToast(friendlyError(error));
+    kickPush();
     setReplies((rs) => [...rs, data]);
     setDraft("");
     setReplying(false);

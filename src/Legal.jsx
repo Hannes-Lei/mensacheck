@@ -65,12 +65,13 @@ const PAGES = {
           "Deine Inhalte: Bewertungen, Kommentare, Reaktionen, Antworten und Lieblingsgerichte, jeweils mit Datum und Mensa.",
           "Gruppen: welchen Gruppen du angehörst bzw. welche du erstellt hast.",
           "Sitzplatz (freiwillig): Mensa, Tisch und Uhrzeit, wenn du eincheckst.",
+          "Benachrichtigungen (freiwillig): Wenn du sie einschaltest, die Push-Adresse deines Geräts mit zwei technischen Schlüsseln, welche Benachrichtigungen du möchtest, und die verschickten Nachrichten.",
           "Technisch: Zeitpunkt der Registrierung und der letzten Anmeldung. Beim Aufruf der App verarbeitet der Hosting-Anbieter außerdem kurz deine IP-Adresse, Datum/Uhrzeit und Browser-Angaben (Server-Logs).",
         ]} />
         <H>3. Wozu und auf welcher Grundlage</H>
         <P>
-          Wir verarbeiten die Daten, um dir die App mit ihren Funktionen bereitzustellen: Konto, Bewertungen, Gruppen
-          und Sitzplätze (Art. 6 Abs. 1 lit. b DSGVO, Nutzungsvertrag). Server-Logs und die Moderation von Inhalten
+          Wir verarbeiten die Daten, um dir die App mit ihren Funktionen bereitzustellen: Konto, Bewertungen, Gruppen,
+          Sitzplätze und Benachrichtigungen (Art. 6 Abs. 1 lit. b DSGVO, Nutzungsvertrag). Server-Logs und die Moderation von Inhalten
           dienen dem sicheren Betrieb und dem Schutz vor Missbrauch (Art. 6 Abs. 1 lit. f DSGVO, berechtigtes Interesse).
           Es gibt keine Werbung, kein Tracking und keine Weitergabe zu Werbezwecken.
         </P>
@@ -86,6 +87,7 @@ const PAGES = {
           "Supabase Inc. (Datenbank, Anmeldung, Profilbilder): Die Daten liegen auf Servern in Frankfurt am Main (EU).",
           "Vercel Inc. (Hosting der App): Sitz in den USA. Die Übermittlung ist über das EU-US Data Privacy Framework bzw. EU-Standardvertragsklauseln abgesichert.",
           "OpenMensa (Speisepläne): Unser Server fragt die Speisepläne ab. Dabei werden keine Daten von dir übertragen.",
+          "Push-Dienst deines Geräts (nur wenn du Benachrichtigungen einschaltest): je nach Gerät Apple, Google oder Mozilla. Er stellt die Nachricht zu; der Inhalt ist dabei verschlüsselt.",
         ]} />
         <P>Mit den Dienstleistern bestehen Verträge zur Auftragsverarbeitung.</P>
         <H>6. Speicher auf deinem Gerät</H>
@@ -98,6 +100,8 @@ const PAGES = {
         <P>
           Deine Daten bleiben gespeichert, bis du dein Konto löschst. Einzelne Bewertungen kannst du jederzeit selbst
           entfernen. Ein Sitzplatz ist nur 60 Minuten sichtbar und wird spätestens nach einem Tag gelöscht.
+          Verschickte Benachrichtigungen werden nach 14 Tagen gelöscht, die Push-Adresse deines Geräts, sobald du
+          Benachrichtigungen ausschaltest oder dich abmeldest.
           Server-Logs löscht der Hosting-Anbieter nach kurzer Zeit automatisch.
         </P>
         <H>8. Deine Rechte</H>

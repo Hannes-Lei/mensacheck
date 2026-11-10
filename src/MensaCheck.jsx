@@ -9,6 +9,7 @@ import ProfileTab from "./ProfileTab.jsx";
 import { LegalSheet, LegalLinks } from "./Legal.jsx";
 import FriendsTab from "./FriendsTab.jsx";
 import Celebration from "./Celebration.jsx";
+import { pushSignOut } from "./Push.jsx";
 
 // ============================================================================
 // Schmausi (früher MensaCheck) Leipzig – Version 6: Freundesgruppen, Reaktionen, halbe Sterne
@@ -77,6 +78,18 @@ export default function MensaCheck() {
     document.querySelector('meta[name="theme-color"]')?.setAttribute("content", theme === "dark" ? "#1C1915" : "#FFF4DF");
     try { localStorage.setItem(THEME_KEY, theme); } catch { /* egal */ }
   }, [theme]);
+
+  // Aus einer Push-Nachricht geöffnet (?tab=me, ?mensa=63, ?sitzplan=63)
+  useEffect(() => {
+    try {
+      const q = new URLSearchParams(window.location.search);
+      const mensa = Number(q.get("mensa"));
+      if (q.get("tab") === "me") setTab("me");
+      else if (q.get("sitzplan")) setTab("friends");
+      else if (mensa) { setCanteenId(mensa); setTab("today"); }
+      if (q.has("tab") || q.has("mensa") || q.has("sitzplan")) window.history.replaceState(null, "", window.location.pathname);
+    } catch { /* egal */ }
+  }, []);
 
   // Einladungslink (?gruppe=CODE): Adresse aufräumen und zu "Freunde" wechseln
   useEffect(() => {
@@ -359,7 +372,7 @@ export default function MensaCheck() {
           favoritesList={favoritesList}
           onToggleFavorite={toggleFavorite}
           needLogin={() => setShowAuth(true)}
-          onSignOut={() => { supabase.auth.signOut(); setTab("today"); }}
+          onSignOut={async () => { await pushSignOut(); supabase.auth.signOut(); setTab("today"); }}
           friends={friends}
           onDeleted={() => { setTab("today"); window.scrollTo({ top: 0 }); showToast("Dein Konto wurde gelöscht. Mach's gut! 👋"); }}
           theme={theme}

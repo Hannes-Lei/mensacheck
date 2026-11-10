@@ -5,6 +5,7 @@ import { StarLine, Chip, Avatar, styles, C } from "./ui.jsx";
 import Moderation from "./Moderation.jsx";
 import { AccountSheet } from "./Legal.jsx";
 import { WrappedCard } from "./Wrapped.jsx";
+import { PushSettings } from "./Push.jsx";
 
 const BADGES_SHOWN = 6; // so viele Abzeichen sind ohne Aufklappen zu sehen
 
@@ -339,6 +340,8 @@ export default function ProfileTab({
           onRemove={removeRating} onClose={() => setListOpen(null)}
         />
       )}
+
+      <PushSettings userId={userId} showToast={showToast} />
 
       <DesignPicker theme={theme} onThemeChange={onThemeChange} />
 

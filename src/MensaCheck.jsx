@@ -10,6 +10,7 @@ import { LegalSheet, LegalLinks } from "./Legal.jsx";
 import FriendsTab from "./FriendsTab.jsx";
 import Celebration from "./Celebration.jsx";
 import { pushSignOut } from "./Push.jsx";
+import { usePolling } from "./usePolling.js";
 
 // ============================================================================
 // Schmausi (früher MensaCheck) Leipzig – Version 6: Freundesgruppen, Reaktionen, halbe Sterne
@@ -150,11 +151,9 @@ export default function MensaCheck() {
       .select("user_id, canteen_id, table_id, created_at, expires_at");
     if (!error) setCheckins(data || []);
   }, [userId, hasGroups]);
-  useEffect(() => {
-    reloadSeats();
-    const t = setInterval(reloadSeats, 60000);
-    return () => clearInterval(t);
-  }, [reloadSeats]);
+  useEffect(() => { reloadSeats(); }, [reloadSeats]);
+  // Bei „Freunde“ jede Minute, sonst nur alle 3 Min. (für den roten Punkt); im Hintergrund gar nicht
+  usePolling(reloadSeats, tab === "friends" ? 60000 : 180000, Boolean(userId && hasGroups));
   useEffect(() => { if (tab === "friends") reloadSeats(); }, [tab, reloadSeats]);
 
   // Roter Punkt am Freunde-Symbol: jemand hat neu eingecheckt, seit ich

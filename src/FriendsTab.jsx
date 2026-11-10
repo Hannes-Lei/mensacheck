@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
+import { usePolling } from "./usePolling.js";
 import { supabase } from "./supabase.js";
 import { daysAgo, todayBerlin, formatDate, timeAgo, friendlyError, variantIcon, variantLabel, NO_TOPPING } from "./helpers.js";
 import { Chip, StarLine, Avatar, formatStars, styles, C, FONT_HEAD } from "./ui.jsx";
@@ -252,11 +253,7 @@ export default function FriendsTab({
   }, [userId, feedUserIds]);
 
   useEffect(() => { if (active) loadFeed(); }, [active, loadFeed]);
-  useEffect(() => {
-    if (!active) return;
-    const t = setInterval(loadFeed, 60000);
-    return () => clearInterval(t);
-  }, [active, loadFeed]);
+  usePolling(loadFeed, 120000, active);   // alle 2 Min., nur sichtbar und im Vordergrund
 
   // Nach Tagen gruppieren: Heute, Gestern, Mo., 19.10. …
   const days = useMemo(() => {

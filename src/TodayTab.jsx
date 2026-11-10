@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from "react";
+import { usePolling } from "./usePolling.js";
 import { supabase } from "./supabase.js";
 import {
   todayBerlin, daysAgo, isWeekend, lastMensaDay, formatPrice, formatAvg, dayLabel, friendlyError, dishKey, dishName, sameDish, mealVariants, variantLabel, variantIcon, NO_TOPPING, nameHasMeat, shortDate, isPastaExtra, isPlaceholderMeal, cleanSidesAndAllergens, mealGroup,
@@ -526,10 +527,9 @@ export default function TodayTab({
   const mineOf = (name) => variants(name).map((k) => mine[k]).find(Boolean);
   const mineKey = (name) => variants(name).find((k) => mine[k]) || dishName(name);
   useEffect(() => { loadRatings(); }, [loadRatings]);
-  useEffect(() => {
-    const t = setInterval(loadRatings, 60000);
-    return () => clearInterval(t);
-  }, [loadRatings]);
+  // Bewertungen ändern sich vor allem heute: nur dann alle 2 Min. nachladen,
+  // und nur solange „Heute“ offen und die App im Vordergrund ist
+  usePolling(loadRatings, 120000, active && date === today, { refreshOnEnable: true });
 
   // 3) Bewerten, Kommentieren, Entfernen
   // Hast du das Gericht schon unter einer älteren Schreibweise bewertet,

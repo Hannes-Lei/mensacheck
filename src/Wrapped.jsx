@@ -172,10 +172,10 @@ export function WrappedCard({ ratings, userId, friends, canteenName, openSpecial
   if (!ratings) return null;
   const specialN = special ? ratings.filter(inPeriod(special)).length : 0;
   const doneN = ratings.filter(inPeriod(periods.done)).length;
-  const curN = ratings.filter(inPeriod(periods.current)).length;
-  if (!doneN && !curN && !specialN) return null;
-  const main = doneN ? periods.done : periods.current;
-  const mainN = doneN || curN;
+  // Nur abgeschlossene Monate – der laufende bleibt eine Überraschung (Hannes, 11.11.)
+  if (!doneN && !specialN) return null;
+  const main = periods.done;
+  const mainN = doneN;
 
   return (
     <>
@@ -195,7 +195,7 @@ export function WrappedCard({ ratings, userId, friends, canteenName, openSpecial
           <div style={{ fontSize: 14 }}>{specialN} {specialN === 1 ? "Gericht" : "Gerichte"} im ganzen Semester · Tippe für den großen Rückblick →</div>
         </button>
       )}
-      {(doneN > 0 || curN > 0) && <button
+      {doneN > 0 && <button
         type="button" onClick={() => setOpen(main)}
         style={{
           width: "100%", textAlign: "left", marginTop: 16, padding: "16px 16px 14px", borderRadius: 18, cursor: "pointer",
@@ -205,16 +205,10 @@ export function WrappedCard({ ratings, userId, friends, canteenName, openSpecial
       >
         <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: ".08em", textTransform: "uppercase", opacity: 0.9 }}>🎁 Schmausi Wrapped</div>
         <div style={{ fontFamily: FONT_HEAD, fontSize: 24, fontWeight: 800, margin: "2px 0 4px" }}>
-          Dein {main.label}{main.running ? " bis jetzt" : ""}
+          Dein {main.label}
         </div>
         <div style={{ fontSize: 14, opacity: 0.95 }}>{mainN} {mainN === 1 ? "Gericht" : "Gerichte"} · Tippe für deinen Rückblick →</div>
       </button>}
-      {doneN > 0 && curN > 0 && (
-        <button type="button" onClick={() => setOpen(periods.current)}
-          style={{ background: "none", border: "none", color: C.muted, fontSize: 13, textDecoration: "underline", cursor: "pointer", padding: "6px 2px" }}>
-          {periods.current.label} bis jetzt ansehen
-        </button>
-      )}
       {open && <WrappedStory period={open} ratings={ratings} userId={userId} friends={friends} canteenName={canteenName} onClose={() => setOpen(null)} />}
     </>
   );

@@ -11,7 +11,7 @@ import FriendsTab from "./FriendsTab.jsx";
 import Celebration from "./Celebration.jsx";
 import { pushSignOut } from "./Push.jsx";
 import { usePolling } from "./usePolling.js";
-import { SemesterBanner } from "./Wrapped.jsx";
+import { WrappedBanner } from "./Wrapped.jsx";
 
 // ============================================================================
 // Schmausi (früher MensaCheck) Leipzig – Version 6: Freundesgruppen, Reaktionen, halbe Sterne
@@ -58,7 +58,7 @@ export default function MensaCheck() {
   const [toast, setToast] = useState(null);
   const [theme, setTheme] = useState(loadTheme); // light | dark
   const [celebrate, setCelebrate] = useState([]); // neu freigeschaltete Abzeichen
-  const [openSpecial, setOpenSpecial] = useState(0); // Semester-Wrapped vom Hinweis aus öffnen
+  const [openWrapped, setOpenWrapped] = useState(null); // Wrapped vom Hinweis aus öffnen: { kind, n }
 
   // Freundesgruppen
   const [groups, setGroups] = useState([]);
@@ -328,7 +328,7 @@ export default function MensaCheck() {
 
       {/* Alle Ansichten bleiben geladen, damit Auswahl und Filter erhalten bleiben */}
       <div style={{ display: tab === "today" ? "block" : "none" }}>
-        <SemesterBanner userId={userId} onOpen={() => { setTab("me"); window.scrollTo({ top: 0 }); setOpenSpecial((n) => n + 1); }} />
+        <WrappedBanner userId={userId} onOpen={(kind) => { setTab("me"); window.scrollTo({ top: 0 }); setOpenWrapped((o) => ({ kind, n: (o?.n || 0) + 1 })); }} />
         <TodayTab
           canteens={canteens}
           canteenId={canteenId}
@@ -383,7 +383,7 @@ export default function MensaCheck() {
           avatarPath={avatarPath}
           onAvatarChange={(p) => { setAvatarPath(p); reloadGroups(); }}
           onUsernameChange={(n) => { setUsername(n); reloadGroups(); }}
-          openSpecial={openSpecial}
+          openWrapped={openWrapped}
           showToast={showToast}
         />
       </div>

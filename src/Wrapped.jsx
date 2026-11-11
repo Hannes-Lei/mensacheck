@@ -54,43 +54,59 @@ export function semesterSpecial(today = todayBerlin()) {
   return null;
 }
 
-// Hat man die Sonder-Ausgabe schon bis zum Ende angeschaut? (je Gerät)
-const seenKey = (key) => `mensacheck-semester-wrapped-${key}`;
+// Hat man einen Rückblick schon bis zum Ende angeschaut? (je Gerät)
+const seenKey = (key) => `mensacheck-wrapped-seen-${key}`;
 function isSeen(key) { try { return localStorage.getItem(seenKey(key)) === "1"; } catch { return false; } }
 function markSeen(key) {
   try { localStorage.setItem(seenKey(key), "1"); } catch { /* egal */ }
   window.dispatchEvent(new Event("schmausi-wrapped-seen"));
 }
 
-// Hinweis oben auf „Heute“: „Dein Semester-Wrapped ist da!“ – verschwindet,
-// sobald man die Sonder-Ausgabe einmal bis zum Ende durchgetippt hat.
-export function SemesterBanner({ userId, onOpen }) {
+const countMine = (userId, p) => supabase.from("ratings").select("id", { count: "exact", head: true })
+  .eq("user_id", userId).gte("meal_date", p.start).lte("meal_date", p.end).then(({ count }) => count || 0);
+
+// Hinweis oben auf „Heute“, sobald ein neuer Rückblick da ist:
+//   🎓 Semester-Sonderausgabe (in der vorlesungsfreien Zeit) – hat Vorrang
+//   🎁 Monats-Wrapped vom letzten Monat
+// Verschwindet, sobald man den Rückblick einmal bis zum Ende durchgetippt hat.
+export function WrappedBanner({ userId, onOpen }) {
   const special = useMemo(() => semesterSpecial(), []);
-  const [show, setShow] = useState(false);
+  const month = useMemo(() => wrappedPeriods().done, []);
+  const [has, setHas] = useState({ special: false, month: false });
+  const [, rerender] = useState(0);
   useEffect(() => {
-    if (!userId || !special || isSeen(special.key)) { setShow(false); return undefined; }
+    if (!userId) { setHas({ special: false, month: false }); return undefined; }
     let alive = true;
-    supabase.from("ratings").select("id", { count: "exact", head: true })
-      .eq("user_id", userId).gte("meal_date", special.start).lte("meal_date", special.end)
-      .then(({ count }) => { if (alive) setShow((count || 0) > 0); });
-    const hide = () => { if (isSeen(special.key)) setShow(false); };
-    window.addEventListener("schmausi-wrapped-seen", hide);
-    return () => { alive = false; window.removeEventListener("schmausi-wrapped-seen", hide); };
-  }, [userId, special]);
-  if (!show) return null;
+    Promise.all([
+      special && !isSeen(special.key) ? countMine(userId, special) : 0,
+      !isSeen(month.key) ? countMine(userId, month) : 0,
+    ]).then(([s, m]) => { if (alive) setHas({ special: s > 0, month: m > 0 }); });
+    const onSeen = () => rerender((n) => n + 1);
+    window.addEventListener("schmausi-wrapped-seen", onSeen);
+    return () => { alive = false; window.removeEventListener("schmausi-wrapped-seen", onSeen); };
+  }, [userId, special, month]);
+
+  const kind = has.special && !isSeen(special.key) ? "special" : has.month && !isSeen(month.key) ? "month" : null;
+  if (!kind) return null;
+  const sp = kind === "special";
   return (
     <button
-      type="button" onClick={onOpen}
+      type="button" onClick={() => onOpen(kind)}
       style={{
         display: "flex", alignItems: "center", gap: 12, width: "calc(100% - 32px)", margin: "4px 16px 0", padding: "12px 14px",
         borderRadius: 16, border: `2.5px solid ${C.ink}`, boxShadow: `3px 3px 0 ${C.ink}`, cursor: "pointer", textAlign: "left",
-        background: `linear-gradient(135deg, ${C.yellow} 0%, ${C.mint} 100%)`, color: "#1A1A1A",
+        background: sp ? `linear-gradient(135deg, ${C.yellow} 0%, ${C.mint} 100%)` : `linear-gradient(135deg, ${C.tomato} 0%, ${C.pink} 55%, ${C.cobalt} 100%)`,
+        color: sp ? "#1A1A1A" : "#fff",
       }}
     >
-      <span style={{ fontSize: 30, lineHeight: 1 }}>🎓</span>
+      <span style={{ fontSize: 30, lineHeight: 1 }}>{sp ? "🎓" : "🎁"}</span>
       <span style={{ flex: 1, minWidth: 0 }}>
-        <span style={{ display: "block", fontFamily: FONT_HEAD, fontSize: 17, fontWeight: 800 }}>Dein Semester-Wrapped ist da!</span>
-        <span style={{ display: "block", fontSize: 13 }}>{special.label} – tippe für deinen großen Rückblick →</span>
+        <span style={{ display: "block", fontFamily: FONT_HEAD, fontSize: 17, fontWeight: 800 }}>
+          {sp ? "Dein Semester-Wrapped ist da!" : `Dein ${month.label}-Wrapped ist da!`}
+        </span>
+        <span style={{ display: "block", fontSize: 13 }}>
+          {sp ? `${special.label} – tippe für deinen großen Rückblick →` : "Tippe für deinen Monatsrückblick →"}
+        </span>
       </span>
     </button>
   );
@@ -158,17 +174,18 @@ function computeWrapped(mine, all, userId, friends, canteenName) {
 }
 
 // ---- Karte im Tab "Ich" ------------------------------------------------------
-export function WrappedCard({ ratings, userId, friends, canteenName, openSpecial = 0 }) {
+export function WrappedCard({ ratings, userId, friends, canteenName, openRequest = null }) {
   const periods = useMemo(() => wrappedPeriods(), []);
   const special = useMemo(() => semesterSpecial(), []);
   const [open, setOpen] = useState(null);
-  // Vom Hinweis auf „Heute“ aus geöffnet → Sonder-Ausgabe direkt starten
+  // Vom Hinweis auf „Heute“ aus geöffnet → passenden Rückblick direkt starten
   const handled = React.useRef(0);
   useEffect(() => {
-    if (!openSpecial || openSpecial === handled.current || !ratings || !special) return;
-    handled.current = openSpecial;
-    setOpen(special);
-  }, [openSpecial, ratings, special]);
+    if (!openRequest || openRequest.n === handled.current || !ratings) return;
+    handled.current = openRequest.n;
+    if (openRequest.kind === "special" && special) setOpen(special);
+    else if (openRequest.kind === "month") setOpen(periods.done);
+  }, [openRequest, ratings, special, periods]);
   if (!ratings) return null;
   const specialN = special ? ratings.filter(inPeriod(special)).length : 0;
   const doneN = ratings.filter(inPeriod(periods.done)).length;
@@ -322,7 +339,7 @@ function WrappedStory({ period, ratings, userId, friends, canteenName, onClose }
   const idx = Math.min(i, slides.length - 1);
   const s = slides[idx];
   const lastShown = all !== null && idx === slides.length - 1;
-  useEffect(() => { if (period.special && lastShown) markSeen(period.key); }, [period, lastShown]);
+  useEffect(() => { if (lastShown) markSeen(period.key); }, [period, lastShown]);
   const tap = (e) => {
     if (e.target.closest("button")) return;
     const x = e.clientX / window.innerWidth;

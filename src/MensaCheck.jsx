@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import { supabase } from "./supabase.js";
 import { dishKey, friendlyError, BADGES, computeStats } from "./helpers.js";
 import { styles, globalCss, C, Avatar } from "./ui.jsx";
-import AuthSheet from "./AuthSheet.jsx";
+import AuthSheet, { NewPasswordSheet } from "./AuthSheet.jsx";
 import TodayTab from "./TodayTab.jsx";
 import RankingTab from "./RankingTab.jsx";
 import ProfileTab from "./ProfileTab.jsx";
@@ -56,6 +56,7 @@ export default function MensaCheck() {
   const [showAuth, setShowAuth] = useState(false);
   const [favoritesList, setFavoritesList] = useState([]);
   const [toast, setToast] = useState(null);
+  const [recovery, setRecovery] = useState(false);   // „Neues Passwort“-Fenster
   const [theme, setTheme] = useState(loadTheme); // light | dark
   const [celebrate, setCelebrate] = useState([]); // neu freigeschaltete Abzeichen
   const [openWrapped, setOpenWrapped] = useState(null); // Wrapped vom Hinweis aus öffnen: { kind, n }
@@ -104,7 +105,10 @@ export default function MensaCheck() {
   // Anmeldestatus beobachten
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
-    const { data } = supabase.auth.onAuthStateChange((_event, s) => setSession(s));
+    const { data } = supabase.auth.onAuthStateChange((event, s) => {
+      setSession(s);
+      if (event === "PASSWORD_RECOVERY") { setShowAuth(false); setRecovery(true); }   // kommt über den Link aus der Mail
+    });
     return () => data.subscription.unsubscribe();
   }, []);
 
@@ -416,6 +420,12 @@ export default function MensaCheck() {
       </nav>
 
       {toast && <div style={styles.toast} role="status">{toast}</div>}
+      {recovery && (
+        <NewPasswordSheet
+          onClose={() => setRecovery(false)}
+          onDone={() => { setRecovery(false); showToast("🔑 Passwort geändert. Du bist angemeldet."); }}
+        />
+      )}
       {showAuth && (
         <AuthSheet
           onClose={() => setShowAuth(false)}

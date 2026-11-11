@@ -6,7 +6,8 @@ import { FONT_HEAD, C } from "./ui.jsx";
 // ============================================================================
 // Schmausi Wrapped – dein Rückblick wie bei Spotify
 // ----------------------------------------------------------------------------
-// Testphase: monatlich. Ab dem Launch auf "semester" umstellen (eine Zeile).
+// Jeden Monat einen Rückblick. Dazu am Semesterende eine Sonder-Ausgabe für das
+// ganze Semester (siehe semesterSpecial).
 // ============================================================================
 export const WRAPPED_MODE = "month"; // "month" | "semester"
 
@@ -35,6 +36,65 @@ export function wrappedPeriods(today = todayBerlin()) {
 }
 
 const inPeriod = (p) => (r) => r.meal_date >= p.start && r.meal_date <= p.end;
+
+// Sonder-Wrapped zum Semesterende – NUR in der vorlesungsfreien Zeit sichtbar.
+// Tag und Monat (MMTT) von–bis; bei Bedarf hier an die echten Termine anpassen:
+const LECTURE_FREE = {
+  winter: { from: 207, to: 331 },   // 7. Februar – 31. März
+  summer: { from: 715, to: 930 },   // 15. Juli – 30. September
+};
+export function semesterSpecial(today = todayBerlin()) {
+  const [y, mo, d] = today.split("-").map(Number);
+  const md = mo * 100 + d;
+  const make = (key, label, start) => ({ key, label, short: "Semester", start, end: today, special: true });
+  if (md >= LECTURE_FREE.winter.from && md <= LECTURE_FREE.winter.to)
+    return make(`ws${y - 1}`, `Wintersemester ${String(y - 1).slice(2)}/${String(y).slice(2)}`, iso(y - 1, 9, 1));
+  if (md >= LECTURE_FREE.summer.from && md <= LECTURE_FREE.summer.to)
+    return make(`ss${y}`, `Sommersemester ${y}`, iso(y, 3, 1));
+  return null;
+}
+
+// Hat man die Sonder-Ausgabe schon bis zum Ende angeschaut? (je Gerät)
+const seenKey = (key) => `mensacheck-semester-wrapped-${key}`;
+function isSeen(key) { try { return localStorage.getItem(seenKey(key)) === "1"; } catch { return false; } }
+function markSeen(key) {
+  try { localStorage.setItem(seenKey(key), "1"); } catch { /* egal */ }
+  window.dispatchEvent(new Event("schmausi-wrapped-seen"));
+}
+
+// Hinweis oben auf „Heute“: „Dein Semester-Wrapped ist da!“ – verschwindet,
+// sobald man die Sonder-Ausgabe einmal bis zum Ende durchgetippt hat.
+export function SemesterBanner({ userId, onOpen }) {
+  const special = useMemo(() => semesterSpecial(), []);
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    if (!userId || !special || isSeen(special.key)) { setShow(false); return undefined; }
+    let alive = true;
+    supabase.from("ratings").select("id", { count: "exact", head: true })
+      .eq("user_id", userId).gte("meal_date", special.start).lte("meal_date", special.end)
+      .then(({ count }) => { if (alive) setShow((count || 0) > 0); });
+    const hide = () => { if (isSeen(special.key)) setShow(false); };
+    window.addEventListener("schmausi-wrapped-seen", hide);
+    return () => { alive = false; window.removeEventListener("schmausi-wrapped-seen", hide); };
+  }, [userId, special]);
+  if (!show) return null;
+  return (
+    <button
+      type="button" onClick={onOpen}
+      style={{
+        display: "flex", alignItems: "center", gap: 12, width: "calc(100% - 32px)", margin: "4px 16px 0", padding: "12px 14px",
+        borderRadius: 16, border: `2.5px solid ${C.ink}`, boxShadow: `3px 3px 0 ${C.ink}`, cursor: "pointer", textAlign: "left",
+        background: `linear-gradient(135deg, ${C.yellow} 0%, ${C.mint} 100%)`, color: "#1A1A1A",
+      }}
+    >
+      <span style={{ fontSize: 30, lineHeight: 1 }}>🎓</span>
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ display: "block", fontFamily: FONT_HEAD, fontSize: 17, fontWeight: 800 }}>Dein Semester-Wrapped ist da!</span>
+        <span style={{ display: "block", fontSize: 13 }}>{special.label} – tippe für deinen großen Rückblick →</span>
+      </span>
+    </button>
+  );
+}
 
 // Alles ausrechnen, was in den Rückblick kommt
 function computeWrapped(mine, all, userId, friends, canteenName) {
@@ -87,23 +147,55 @@ function computeWrapped(mine, all, userId, friends, canteenName) {
   else if (meatless >= 70 && n >= 3) type = { emoji: "🥦", name: "Grünzeug-Fan", text: `${meatless} % deiner Gerichte waren ohne Fleisch.` };
   else type = { emoji: "🍽️", name: "Allrounder:in", text: "Mal Pasta, mal Schnitzel, mal Experiment – du probierst dich durch." };
 
-  return { n, days: days.size, canteens, topCanteen: topCanteen && Number(topCanteen), topCount, best, worst, avg, comments, meatless, favDay: favDay && DAYS[favDay[0]], stricter, buddy, type };
+  // Nur fürs Semester: deine Top 3 (verschiedene Gerichte) und dein stärkster Monat
+  const top3 = [];
+  for (const r of sorted) { if (!top3.some((t) => t.meal_name === r.meal_name)) top3.push(r); if (top3.length === 3) break; }
+  const byMonth = {};
+  for (const r of mine) { const k = Number(r.meal_date.slice(5, 7)) - 1; byMonth[k] = (byMonth[k] || 0) + 1; }
+  const topMonth = Object.entries(byMonth).sort((a, b) => b[1] - a[1])[0];
+
+  return { n, days: days.size, canteens, topCanteen: topCanteen && Number(topCanteen), topCount, best, worst, avg, comments, meatless, favDay: favDay && DAYS[favDay[0]], stricter, buddy, type, top3, topMonth: topMonth && { name: MONTHS[topMonth[0]], count: topMonth[1] } };
 }
 
 // ---- Karte im Tab "Ich" ------------------------------------------------------
-export function WrappedCard({ ratings, userId, friends, canteenName }) {
+export function WrappedCard({ ratings, userId, friends, canteenName, openSpecial = 0 }) {
   const periods = useMemo(() => wrappedPeriods(), []);
+  const special = useMemo(() => semesterSpecial(), []);
   const [open, setOpen] = useState(null);
+  // Vom Hinweis auf „Heute“ aus geöffnet → Sonder-Ausgabe direkt starten
+  const handled = React.useRef(0);
+  useEffect(() => {
+    if (!openSpecial || openSpecial === handled.current || !ratings || !special) return;
+    handled.current = openSpecial;
+    setOpen(special);
+  }, [openSpecial, ratings, special]);
   if (!ratings) return null;
+  const specialN = special ? ratings.filter(inPeriod(special)).length : 0;
   const doneN = ratings.filter(inPeriod(periods.done)).length;
   const curN = ratings.filter(inPeriod(periods.current)).length;
-  if (!doneN && !curN) return null;
+  if (!doneN && !curN && !specialN) return null;
   const main = doneN ? periods.done : periods.current;
   const mainN = doneN || curN;
 
   return (
     <>
-      <button
+      {specialN > 0 && (
+        <button
+          type="button" onClick={() => setOpen(special)}
+          style={{
+            width: "100%", textAlign: "left", marginTop: 16, padding: "16px 16px 14px", borderRadius: 18, cursor: "pointer",
+            border: `2.5px solid ${C.ink}`, boxShadow: `4px 4px 0 ${C.ink}`, color: "#1A1A1A",
+            background: `linear-gradient(135deg, ${C.yellow} 0%, ${C.mint} 100%)`,
+          }}
+        >
+          <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: ".08em", textTransform: "uppercase" }}>🎓 Sonder-Ausgabe · Schmausi Wrapped</div>
+          <div style={{ fontFamily: FONT_HEAD, fontSize: 24, fontWeight: 800, margin: "2px 0 4px" }}>
+            Dein {special.label}
+          </div>
+          <div style={{ fontSize: 14 }}>{specialN} {specialN === 1 ? "Gericht" : "Gerichte"} im ganzen Semester · Tippe für den großen Rückblick →</div>
+        </button>
+      )}
+      {(doneN > 0 || curN > 0) && <button
         type="button" onClick={() => setOpen(main)}
         style={{
           width: "100%", textAlign: "left", marginTop: 16, padding: "16px 16px 14px", borderRadius: 18, cursor: "pointer",
@@ -116,7 +208,7 @@ export function WrappedCard({ ratings, userId, friends, canteenName }) {
           Dein {main.label}{main.running ? " bis jetzt" : ""}
         </div>
         <div style={{ fontSize: 14, opacity: 0.95 }}>{mainN} {mainN === 1 ? "Gericht" : "Gerichte"} · Tippe für deinen Rückblick →</div>
-      </button>
+      </button>}
       {doneN > 0 && curN > 0 && (
         <button type="button" onClick={() => setOpen(periods.current)}
           style={{ background: "none", border: "none", color: C.muted, fontSize: 13, textDecoration: "underline", cursor: "pointer", padding: "6px 2px" }}>
@@ -149,7 +241,12 @@ function WrappedStory({ period, ratings, userId, friends, canteenName, onClose }
   const big = { fontFamily: FONT_HEAD, fontWeight: 800, lineHeight: 1.05, letterSpacing: "-0.02em" };
 
   const slides = [
-    { bg: C.tomato, fg: "#fff", body: <>
+    period.special ? { bg: C.yellow, fg: "#1A1A1A", body: <>
+      <div style={{ fontSize: 64 }}>🎓</div>
+      <div style={{ fontSize: 15, fontWeight: 800, letterSpacing: ".08em", textTransform: "uppercase" }}>Sonder-Ausgabe</div>
+      <div style={{ ...big, fontSize: 40 }}>Dein {when}<br />bei Schmausi</div>
+      <div style={{ fontSize: 17 }}>Ein ganzes Semester Mensa – Zeit für den großen Rückblick …</div>
+    </> } : { bg: C.tomato, fg: "#fff", body: <>
       <div style={{ fontSize: 64 }}>🍽️</div>
       <div style={{ ...big, fontSize: 40 }}>Dein {when}<br />bei Schmausi</div>
       <div style={{ fontSize: 17, opacity: 0.9 }}>Schauen wir mal, was du so gegessen hast …</div>
@@ -166,7 +263,27 @@ function WrappedStory({ period, ratings, userId, friends, canteenName, onClose }
       <div style={{ ...big, fontSize: 36 }}>{canteenName(w.topCanteen)}</div>
       <div style={{ fontSize: 17 }}>{w.topCount} von {w.n} Bewertungen</div>
     </> },
-    w.best && { bg: C.yellow, fg: "#1A1A1A", body: <>
+    period.special && w.topMonth && { bg: C.pink, fg: "#1A1A1A", body: <>
+      <div style={{ fontSize: 17 }}>Dein Mensa-Monat</div>
+      <div style={{ fontSize: 64 }}>📅</div>
+      <div style={{ ...big, fontSize: 48 }}>{w.topMonth.name}</div>
+      <div style={{ fontSize: 17 }}>{w.topMonth.count} Bewertungen – da warst du richtig im Flow</div>
+    </> },
+    period.special && w.top3.length >= 3 && { bg: C.mint, fg: "#1A1A1A", body: <>
+      <div style={{ fontSize: 17 }}>Deine Top 3 des Semesters</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14, marginTop: 10, width: "100%", maxWidth: 340 }}>
+        {w.top3.map((r, k) => (
+          <div key={k} style={{ display: "flex", gap: 12, alignItems: "center", textAlign: "left" }}>
+            <div style={{ ...big, fontSize: 40, width: 44 }}>{["🥇", "🥈", "🥉"][k]}</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ ...big, fontSize: 20 }}>{r.meal_name}</div>
+              <div style={{ fontSize: 14 }}>★ {formatAvg(r.stars)} · {canteenName(r.canteen_id)}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </> },
+    w.best && !(period.special && w.top3.length >= 3) && { bg: C.yellow, fg: "#1A1A1A", body: <>
       <div style={{ fontSize: 17 }}>Dein Highlight</div>
       <div style={{ ...big, fontSize: 30 }}>„{w.best.meal_name}“</div>
       <div style={{ ...big, fontSize: 44 }}>★ {formatAvg(w.best.stars)}</div>
@@ -210,6 +327,8 @@ function WrappedStory({ period, ratings, userId, friends, canteenName, onClose }
 
   const idx = Math.min(i, slides.length - 1);
   const s = slides[idx];
+  const lastShown = all !== null && idx === slides.length - 1;
+  useEffect(() => { if (period.special && lastShown) markSeen(period.key); }, [period, lastShown]);
   const tap = (e) => {
     if (e.target.closest("button")) return;
     const x = e.clientX / window.innerWidth;

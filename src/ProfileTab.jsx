@@ -173,6 +173,7 @@ function MyRatingsSheet({ ratings, initial, canteenName, onRemove, onClose }) {
 export default function ProfileTab({
   userId, username, canteens, favoritesList, onToggleFavorite, needLogin, onSignOut, onDeleted = () => {}, friends = new Map(),
   theme, onThemeChange, active, avatarPath = null, onAvatarChange = () => {}, showToast = () => {}, onUsernameChange = () => {},
+  openSpecial = 0,
 }) {
   const [ratings, setRatings] = useState(null);
   const [dishAvg, setDishAvg] = useState({});
@@ -257,7 +258,7 @@ export default function ProfileTab({
         <div style={styles.statBox}><div style={styles.statNum}>{stats.canteens}</div><div style={styles.statLabel}>Mensen</div></div>
       </div>
 
-      <WrappedCard ratings={ratings} userId={userId} friends={friends} canteenName={canteenName} />
+      <WrappedCard ratings={ratings} userId={userId} friends={friends} canteenName={canteenName} openSpecial={openSpecial} />
 
       {/* Abzeichen: erst die geschafften, dann die, die am nächsten dran sind */}
       <h3 style={styles.h3}>Abzeichen · {earned} von {BADGES.length}</h3>

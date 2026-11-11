@@ -61,6 +61,7 @@ export function PushSettings({ userId, showToast = () => {} }) {
   const [status, setStatus] = useState("loading");
   const [prefs, setPrefs] = useState({ favorites: true, reactions: true, friends: true });
   const [busy, setBusy] = useState(false);
+  const [isMod, setIsMod] = useState(false);   // Test-Knopf nur für Moderatoren
 
   async function loadPrefs() {
     const { data } = await supabase.from("push_prefs").select("favorites, reactions, friends").eq("user_id", userId).maybeSingle();
@@ -86,6 +87,11 @@ export function PushSettings({ userId, showToast = () => {} }) {
     })();
     return () => { alive = false; };
   }, [userId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (status !== "on") return;
+    supabase.rpc("is_moderator").then(({ data }) => setIsMod(data === true));
+  }, [status, userId]);
 
   async function enable() {
     setBusy(true);
@@ -182,7 +188,7 @@ export function PushSettings({ userId, showToast = () => {} }) {
             ))}
           </div>
           <div style={{ display: "flex", gap: 16, marginTop: 8 }}>
-            <button type="button" onClick={test} style={styles.smallAction}>Test-Nachricht</button>
+            {isMod && <button type="button" onClick={test} style={styles.smallAction}>Test-Nachricht</button>}
             <button type="button" disabled={busy} onClick={disable} style={{ ...styles.smallAction, color: C.muted }}>Ausschalten</button>
           </div>
         </>

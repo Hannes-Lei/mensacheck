@@ -328,7 +328,7 @@ export default function MensaCheck() {
 
       {/* Alle Ansichten bleiben geladen, damit Auswahl und Filter erhalten bleiben */}
       <div style={{ display: tab === "today" ? "block" : "none" }}>
-        <WrappedBanner userId={userId} onOpen={(kind) => { setTab("me"); window.scrollTo({ top: 0 }); setOpenWrapped((o) => ({ kind, n: (o?.n || 0) + 1 })); }} />
+        <WrappedBanner userId={userId} active={tab === "today"} onOpen={(kind) => { setTab("me"); window.scrollTo({ top: 0 }); setOpenWrapped((o) => ({ kind, n: (o?.n || 0) + 1 })); }} />
         <TodayTab
           canteens={canteens}
           canteenId={canteenId}

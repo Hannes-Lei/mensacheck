@@ -235,6 +235,13 @@ export const globalCss = `
   .heart-pop { transform: translate(-50%, -50%) scale(0); animation: heartpop .8s ease-out forwards; filter: drop-shadow(0 4px 8px rgba(0,0,0,.25)); }
   @keyframes heartpop { 0% { transform: translate(-50%,-50%) scale(0); opacity: 0; } 25% { transform: translate(-50%,-50%) scale(1.25); opacity: 1; } 45% { transform: translate(-50%,-50%) scale(.95); } 70% { transform: translate(-50%,-50%) scale(1); opacity: 1; } 100% { transform: translate(-50%,-70%) scale(1.1); opacity: 0; } }
   @keyframes wrapIn { from { opacity: 0; transform: translateY(18px) scale(.97); } to { opacity: 1; transform: none; } }
+  .wrap-banner-special { animation: wrapIn .45s ease-out both, bannerGlow 2.8s ease-in-out .5s infinite; }
+  .wrap-shimmer { position: absolute; top: 0; bottom: 0; left: -60%; width: 45%; pointer-events: none;
+    background: linear-gradient(105deg, transparent 0%, rgba(255,255,255,.65) 50%, transparent 100%);
+    transform: skewX(-18deg); animation: shimmer 2.8s ease-in-out .5s infinite; }
+  @keyframes shimmer { 0% { left: -60%; } 55%, 100% { left: 130%; } }
+  @keyframes bannerGlow { 0%, 100% { box-shadow: 3px 3px 0 var(--ink); } 50% { box-shadow: 3px 3px 0 var(--ink), 0 0 18px 2px rgba(255, 201, 60, .75); } }
+  @media (prefers-reduced-motion: reduce) { .wrap-shimmer, .wrap-banner-special { animation: none; } }
   .wrap-in > * { animation: wrapIn .5s ease-out both; }
   .wrap-in > *:nth-child(2) { animation-delay: .12s; } .wrap-in > *:nth-child(3) { animation-delay: .24s; }
   .wrap-in > *:nth-child(4) { animation-delay: .36s; } .wrap-in > *:nth-child(5) { animation-delay: .48s; }

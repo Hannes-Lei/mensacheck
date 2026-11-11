@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import { supabase } from "./supabase.js";
 import { formatAvg, formatDate, todayBerlin, isMeatless } from "./helpers.js";
 import { FONT_HEAD, C } from "./ui.jsx";
+import { runConfetti } from "./Celebration.jsx";
 
 // ============================================================================
 // Schmausi Wrapped – dein Rückblick wie bei Spotify
@@ -69,16 +70,19 @@ const countMine = (userId, p) => supabase.from("ratings").select("id", { count: 
 //   🎓 Semester-Sonderausgabe (in der vorlesungsfreien Zeit) – hat Vorrang
 //   🎁 Monats-Wrapped vom letzten Monat
 // Verschwindet, sobald man den Rückblick einmal bis zum Ende durchgetippt hat.
-export function WrappedBanner({ userId, onOpen }) {
+export function WrappedBanner({ userId, onOpen, active = true }) {
   const special = useMemo(() => semesterSpecial(), []);
   const month = useMemo(() => wrappedPeriods().done, []);
   const [has, setHas] = useState({ special: false, month: false });
   const [, rerender] = useState(0);
+  const [party, setParty] = useState(false);
   useEffect(() => {
     if (!userId) { setHas({ special: false, month: false }); return undefined; }
     let alive = true;
+    // Semester-Rückblick zählt auch, wenn er schon angesehen ist: solange er da ist,
+    // gibt es keinen Monats-Hinweis (der Monat steht dann unter „Ich“ darunter)
     Promise.all([
-      special && !isSeen(special.key) ? countMine(userId, special) : 0,
+      special ? countMine(userId, special) : 0,
       !isSeen(month.key) ? countMine(userId, month) : 0,
     ]).then(([s, m]) => { if (alive) setHas({ special: s > 0, month: m > 0 }); });
     const onSeen = () => rerender((n) => n + 1);
@@ -86,30 +90,55 @@ export function WrappedBanner({ userId, onOpen }) {
     return () => { alive = false; window.removeEventListener("schmausi-wrapped-seen", onSeen); };
   }, [userId, special, month]);
 
-  const kind = has.special && !isSeen(special.key) ? "special" : has.month && !isSeen(month.key) ? "month" : null;
-  if (!kind) return null;
+  const kind = has.special ? (isSeen(special.key) ? null : "special") : has.month && !isSeen(month.key) ? "month" : null;
   const sp = kind === "special";
+
+  // Semester-Hinweis: einmal pro App-Start Konfetti
+  useEffect(() => {
+    if (!sp || !active) return;
+    try { if (sessionStorage.getItem("schmausi-party") === special.key) return; sessionStorage.setItem("schmausi-party", special.key); } catch { /* egal */ }
+    setParty(true);
+  }, [sp, special, active]);
+
+  if (!kind) return null;
   return (
-    <button
-      type="button" onClick={() => onOpen(kind)}
-      style={{
-        display: "flex", alignItems: "center", gap: 12, width: "calc(100% - 32px)", margin: "4px 16px 0", padding: "12px 14px",
-        borderRadius: 16, border: `2.5px solid ${C.ink}`, boxShadow: `3px 3px 0 ${C.ink}`, cursor: "pointer", textAlign: "left",
-        background: sp ? `linear-gradient(135deg, ${C.yellow} 0%, ${C.mint} 100%)` : `linear-gradient(135deg, ${C.tomato} 0%, ${C.pink} 55%, ${C.cobalt} 100%)`,
-        color: sp ? "#1A1A1A" : "#fff",
-      }}
-    >
-      <span style={{ fontSize: 30, lineHeight: 1 }}>{sp ? "🎓" : "🎁"}</span>
-      <span style={{ flex: 1, minWidth: 0 }}>
-        <span style={{ display: "block", fontFamily: FONT_HEAD, fontSize: 17, fontWeight: 800 }}>
-          {sp ? "Dein Semester-Wrapped ist da!" : `Dein ${month.label}-Wrapped ist da!`}
+    <>
+      {party && <ConfettiLayer onDone={() => setParty(false)} />}
+      <button
+        type="button" onClick={() => onOpen(kind)} className={sp ? "wrap-banner wrap-banner-special" : "wrap-banner"}
+        style={{
+          position: "relative", overflow: "hidden",
+          display: "flex", alignItems: "center", gap: 12, width: "calc(100% - 32px)", margin: "4px 16px 0", padding: sp ? "14px 14px" : "12px 14px",
+          borderRadius: 16, border: `2.5px solid ${C.ink}`, boxShadow: `3px 3px 0 ${C.ink}`, cursor: "pointer", textAlign: "left",
+          background: sp ? `linear-gradient(135deg, ${C.yellow} 0%, ${C.mint} 100%)` : `linear-gradient(135deg, ${C.tomato} 0%, ${C.pink} 55%, ${C.cobalt} 100%)`,
+          color: sp ? "#1A1A1A" : "#fff",
+        }}
+      >
+        {sp && <span className="wrap-shimmer" aria-hidden="true" />}
+        <span style={{ fontSize: sp ? 34 : 30, lineHeight: 1, position: "relative" }}>{sp ? "🎓" : "🎁"}</span>
+        <span style={{ flex: 1, minWidth: 0, position: "relative" }}>
+          <span style={{ display: "block", fontFamily: FONT_HEAD, fontSize: sp ? 18 : 17, fontWeight: 800 }}>
+            {sp ? "Dein Semester-Wrapped ist da!" : `Dein ${month.label}-Wrapped ist da!`}
+          </span>
+          <span style={{ display: "block", fontSize: 13 }}>
+            {sp ? `${special.label} – tippe für deinen großen Rückblick →` : "Tippe für deinen Monatsrückblick →"}
+          </span>
         </span>
-        <span style={{ display: "block", fontSize: 13 }}>
-          {sp ? `${special.label} – tippe für deinen großen Rückblick →` : "Tippe für deinen Monatsrückblick →"}
-        </span>
-      </span>
-    </button>
+      </button>
+    </>
   );
+}
+
+// Konfetti über den ganzen Bildschirm (ca. 3 Sekunden, klickt nicht im Weg)
+function ConfettiLayer({ onDone }) {
+  const ref = React.useRef(null);
+  useEffect(() => {
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) { onDone(); return undefined; }
+    const stop = runConfetti(ref.current, ["#FFC93C", "#26C281", "#FF5A36", "#2D4BFF", "#FF8FB8"]);
+    const t = setTimeout(onDone, 3400);
+    return () => { stop(); clearTimeout(t); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  return <canvas ref={ref} aria-hidden="true" style={{ position: "fixed", inset: 0, width: "100vw", height: "100vh", pointerEvents: "none", zIndex: 60 }} />;
 }
 
 // Alles ausrechnen, was in den Rückblick kommt
@@ -164,13 +193,22 @@ function computeWrapped(mine, all, userId, friends, canteenName) {
   else type = { emoji: "🍽️", name: "Allrounder:in", text: "Mal Pasta, mal Schnitzel, mal Experiment – du probierst dich durch." };
 
   // Nur fürs Semester: deine Top 3 (verschiedene Gerichte) und dein stärkster Monat
-  const top3 = [];
-  for (const r of sorted) { if (!top3.some((t) => t.meal_name === r.meal_name)) top3.push(r); if (top3.length === 3) break; }
+  const top5 = [];
+  for (const r of sorted) { if (!top5.some((t) => t.meal_name === r.meal_name)) top5.push(r); if (top5.length === 5) break; }
+  // Dauerbrenner: das Gericht, das du am öftesten bewertet hast (mind. 2×)
+  const dishCnt = {};
+  for (const r of mine) { const k = r.meal_name.trim().toLowerCase(); (dishCnt[k] ||= { name: r.meal_name, count: 0, sum: 0 }); dishCnt[k].count++; dishCnt[k].sum += Number(r.stars); }
+  const regular = Object.values(dishCnt).sort((a, b) => b.count - a.count)[0];
+  // Längste Serie: Mensatage am Stück (Freitag → Montag zählt als durchgehend)
+  const nextWorkday = (d) => { const t = new Date(d + "T12:00:00Z"); do { t.setUTCDate(t.getUTCDate() + 1); } while ([0, 6].includes(t.getUTCDay())); return t.toISOString().slice(0, 10); };
+  let streak = 0, run = 0, prev = null;
+  for (const d of [...days].sort()) { run = prev && nextWorkday(prev) === d ? run + 1 : 1; streak = Math.max(streak, run); prev = d; }
+  const canteenRank = Object.entries(byCanteen).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([id, c]) => ({ id: Number(id), count: c }));
   const byMonth = {};
   for (const r of mine) { const k = Number(r.meal_date.slice(5, 7)) - 1; byMonth[k] = (byMonth[k] || 0) + 1; }
   const topMonth = Object.entries(byMonth).sort((a, b) => b[1] - a[1])[0];
 
-  return { n, days: days.size, canteens, topCanteen: topCanteen && Number(topCanteen), topCount, best, worst, avg, comments, meatless, favDay: favDay && DAYS[favDay[0]], stricter, buddy, type, top3, topMonth: topMonth && { name: MONTHS[topMonth[0]], count: topMonth[1] } };
+  return { n, days: days.size, canteens, topCanteen: topCanteen && Number(topCanteen), topCount, best, worst, avg, comments, meatless, favDay: favDay && DAYS[favDay[0]], stricter, buddy, type, top5, regular: regular && regular.count >= 2 ? { ...regular, avg: regular.sum / regular.count } : null, streak, canteenRank, topMonth: topMonth && { name: MONTHS[topMonth[0]], count: topMonth[1] } };
 }
 
 // ---- Karte im Tab "Ich" ------------------------------------------------------
@@ -268,7 +306,20 @@ function WrappedStory({ period, ratings, userId, friends, canteenName, onClose }
       <div style={{ ...big, fontSize: 30 }}>{w.n === 1 ? "Gericht" : "Gerichte"} bewertet</div>
       <div style={{ fontSize: 17, opacity: 0.9 }}>an {w.days} {w.days === 1 ? "Tag" : "Tagen"} · in {w.canteens} {w.canteens === 1 ? "Mensa" : "Mensen"} · {w.comments} {w.comments === 1 ? "Kommentar" : "Kommentare"}</div>
     </> },
-    w.topCanteen && { bg: C.mint, fg: "#1A1A1A", body: <>
+    period.special && w.canteenRank.length >= 2 && { bg: C.mint, fg: "#1A1A1A", body: <>
+      <div style={{ fontSize: 17 }}>Deine Mensen</div>
+      <div style={{ fontSize: 56 }}>🏫</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 6, width: "100%", maxWidth: 330 }}>
+        {w.canteenRank.map((c, k) => (
+          <div key={c.id} style={{ display: "flex", gap: 12, alignItems: "center", textAlign: "left" }}>
+            <div style={{ ...big, fontSize: 34, width: 40 }}>{["🥇", "🥈", "🥉"][k]}</div>
+            <div style={{ flex: 1, ...big, fontSize: 20 }}>{canteenName(c.id)}</div>
+            <div style={{ ...big, fontSize: 22 }}>{c.count}×</div>
+          </div>
+        ))}
+      </div>
+    </> },
+    w.topCanteen && !(period.special && w.canteenRank.length >= 2) && { bg: C.mint, fg: "#1A1A1A", body: <>
       <div style={{ fontSize: 17 }}>Dein zweites Zuhause</div>
       <div style={{ fontSize: 64 }}>🏫</div>
       <div style={{ ...big, fontSize: 36 }}>{canteenName(w.topCanteen)}</div>
@@ -280,21 +331,39 @@ function WrappedStory({ period, ratings, userId, friends, canteenName, onClose }
       <div style={{ ...big, fontSize: 48 }}>{w.topMonth.name}</div>
       <div style={{ fontSize: 17 }}>{w.topMonth.count} Bewertungen – da warst du richtig im Flow</div>
     </> },
-    period.special && w.top3.length >= 3 && { bg: C.mint, fg: "#1A1A1A", body: <>
-      <div style={{ fontSize: 17 }}>Deine Top 3 des Semesters</div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 14, marginTop: 10, width: "100%", maxWidth: 340 }}>
-        {w.top3.map((r, k) => (
+    period.special && w.top5.length >= 3 && { bg: C.yellow, fg: "#1A1A1A", body: <>
+      <div style={{ fontSize: 17 }}>Deine Top {w.top5.length} des Semesters</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 10, width: "100%", maxWidth: 340 }}>
+        {w.top5.map((r, k) => (
           <div key={k} style={{ display: "flex", gap: 12, alignItems: "center", textAlign: "left" }}>
-            <div style={{ ...big, fontSize: 40, width: 44 }}>{["🥇", "🥈", "🥉"][k]}</div>
+            <div style={{ ...big, fontSize: k < 3 ? 36 : 26, width: 42, textAlign: "center" }}>{["🥇", "🥈", "🥉", "4", "5"][k]}</div>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ ...big, fontSize: 20 }}>{r.meal_name}</div>
-              <div style={{ fontSize: 14 }}>★ {formatAvg(r.stars)} · {canteenName(r.canteen_id)}</div>
+              <div style={{ ...big, fontSize: k < 3 ? 19 : 17 }}>{r.meal_name}</div>
+              <div style={{ fontSize: 13 }}>★ {formatAvg(r.stars)} · {canteenName(r.canteen_id)}</div>
             </div>
           </div>
         ))}
       </div>
     </> },
-    w.best && !(period.special && w.top3.length >= 3) && { bg: C.yellow, fg: "#1A1A1A", body: <>
+    period.special && w.regular && { bg: C.tomato, fg: "#fff", body: <>
+      <div style={{ fontSize: 17, opacity: 0.9 }}>Dein Dauerbrenner</div>
+      <div style={{ fontSize: 64 }}>🔁</div>
+      <div style={{ ...big, fontSize: 32 }}>„{w.regular.name}“</div>
+      <div style={{ fontSize: 17, opacity: 0.95 }}>{w.regular.count}× bewertet · im Schnitt ★ {formatAvg(Math.round(w.regular.avg * 4) / 4)}</div>
+    </> },
+    period.special && w.streak >= 2 && { bg: "#1A1A1A", fg: "#fff", body: <>
+      <div style={{ fontSize: 17, opacity: 0.9 }}>Deine längste Serie</div>
+      <div style={{ fontSize: 64 }}>🔥</div>
+      <div style={{ ...big, fontSize: 88 }}>{w.streak}</div>
+      <div style={{ ...big, fontSize: 26 }}>Mensatage am Stück</div>
+    </> },
+    period.special && w.worst && w.best && w.worst.stars < w.best.stars && { bg: C.cobalt, fg: "#fff", body: <>
+      <div style={{ fontSize: 17, opacity: 0.9 }}>Und das hier …</div>
+      <div style={{ fontSize: 64 }}>🙈</div>
+      <div style={{ ...big, fontSize: 30 }}>„{w.worst.meal_name}“</div>
+      <div style={{ fontSize: 17, opacity: 0.95 }}>★ {formatAvg(w.worst.stars)} · lieber nicht nochmal</div>
+    </> },
+    w.best && !(period.special && w.top5.length >= 3) && { bg: C.yellow, fg: "#1A1A1A", body: <>
       <div style={{ fontSize: 17 }}>Dein Highlight</div>
       <div style={{ ...big, fontSize: 30 }}>„{w.best.meal_name}“</div>
       <div style={{ ...big, fontSize: 44 }}>★ {formatAvg(w.best.stars)}</div>

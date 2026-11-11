@@ -10,7 +10,7 @@ import { styles, C } from "./ui.jsx";
 
 const COLORS = ["#EE6A24", "#22408F", "#E8A317", "#3C6E47", "#EE6A24"];
 
-function runConfetti(canvas) {
+export function runConfetti(canvas, colors = COLORS) {
   const ctx = canvas.getContext("2d");
   const dpr = window.devicePixelRatio || 1;
   const w = window.innerWidth;
@@ -27,7 +27,7 @@ function runConfetti(canvas) {
     size: 6 + Math.random() * 6,
     rot: Math.random() * Math.PI,
     vr: (Math.random() - 0.5) * 0.25,
-    color: COLORS[Math.floor(Math.random() * COLORS.length)],
+    color: colors[Math.floor(Math.random() * colors.length)],
   }));
 
   const start = performance.now();

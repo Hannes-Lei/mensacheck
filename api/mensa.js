@@ -1,230 +1,20 @@
 // ============================================================================
-// MensaCheck – Server-Funktion für die Speisepläne
+// Schmausi – Server-Funktion für die Speisepläne
 // ----------------------------------------------------------------------------
 // Diese Datei läuft NICHT im Browser, sondern auf den Servern von Vercel.
-// Sie holt die Speisepläne von OpenMensa (openmensa.org) und gibt sie
-// aufgeräumt an die App weiter. Weil die Anfrage vom Server kommt, gibt es
-// kein CORS-Problem.
 //
 //   /api/mensa              -> Liste aller Leipziger Mensen
-//   /api/mensa?canteen=63   -> Speiseplan der Mensa mit der Nummer 63
+//   /api/mensa?canteen=63   -> Speiseplan der Mensa mit der Nummer 63:
+//                              letzter Mensatag, heute, kommende Tage
+//
+// Die eigentliche Arbeit steht in api/_plan.js (holen, merken) und
+// api/_dishes.js (aufräumen, doppelte Gerichte, vegan/vegetarisch/Fleisch).
 // ============================================================================
+import { CANTEENS, loadCanteen } from "./_plan.js";
 
-// Alle Mensen des Studentenwerks Leipzig mit ihrer OpenMensa-Nummer.
-// Neue Mensa dazunehmen? Einfach eine Zeile ergänzen.
-export const CANTEENS = [
-  { id: 63, name: "Mensa am Park" },
-  { id: 64, name: "Mensa Academica" },
-  { id: 65, name: "Mensa am Elsterbecken" },
-  { id: 67, name: "Mensa am Medizincampus" },
-  { id: 68, name: "Mensa Peterssteinweg" },
-  { id: 66, name: "Mensa an den Tierkliniken" },
-  { id: 69, name: "Mensa Schönauer Straße" },
-];
-
-// OpenMensa wirft in "notes" Beilagen, Allergene und Zusatzstoffe
-// zusammen. Diese Listen helfen beim Sortieren.
-const ALLERGENS = [
-  "glutenhaltiges Getreide", "Weizen", "Roggen", "Gerste", "Hafer", "Dinkel",
-  "Milch/ Milchzucker", "Eier", "Soja", "Sellerie", "Senf", "Sesam", "Fisch",
-  "Erdnüsse", "Schalenfrüchte/ Nüsse", "Mandeln", "Haselnüsse", "Walnüsse",
-  "Cashewnüsse", "Pistazien", "Lupine", "Krebstiere", "Weichtiere",
-  "Sulfit/ Schwefeldioxid",
-];
-const ADDITIVES = [
-  "Farbstoff", "Konservierungsstoff", "Antioxidationsmittel", "Phosphat",
-  "Geschmacksverstärker", "Süßungsmittel", "koffeinhaltig", "chininhaltig",
-  "geschwefelt", "geschwärzt", "gewachst", "Alkohol",
-];
-const MEAT = ["Schwein", "Rind", "Geflügel", "Lamm", "Wild", "Fisch"];
-const DIET = ["Vegan", "Vegetarisch"];
-
-// Kategorien, die keine Hauptgerichte sind (werden in der App einklappbar).
-const EXTRA_CATEGORY = /beilage|smoothie|dessert|salat|getränk|obst/i;
-
-// Bei diesen Theken trägt das Studentenwerk dieselben Angaben an ALLE
-// Soßen/Sorten der Theke ein – z.B. "Vegan" und "Schwein" gleichzeitig.
-// Dort verlassen wir uns lieber auf den Namen des Gerichts.
-const SHARED_NOTES_CATEGORY = /pasta|pizza/i;
-
-// Wörter im Gerichtnamen, die auf Fleisch oder Fisch hinweisen …
-const MEAT_IN_NAME = new RegExp(
-  [
-    "fleisch", "hack", "schwein", "rind", "kalb", "lamm", "wild", "geflügel",
-    "hähnchen", "huhn", "chicken", "pute", "ente", "schinken", "speck", "bacon",
-    "salami", "wurst", "würst", "chorizo", "kassler", "leberkäse", "frikadelle",
-    "bulette", "cevapcici", "döner", "bolognese", "fisch", "lachs", "scholle",
-    "kabeljau", "forelle", "hering", "matjes", "garnele", "shrimp", "calamari",
-    "muschel", "thunfisch",
-  ].join("|"),
-  "i"
-);
-// … außer es ist ein Ersatzprodukt ("Bolognese aus Tofu", "Like Chicken")
-const MEAT_SUBSTITUTE = /tofu|soja|seitan|vegetar|veggie|planted|pflanz|fleischlos|like /i;
-
-// Am Pastateller listet das Studentenwerk auch Nudelsorte und Käse als
-// eigene "Gerichte" (Spirelli, Geriebener Gouda, Pizzaschmelz). Die gibt es
-// zu jeder Soße dazu – wir zeigen nur die Soßen.
-const PASTA_EXTRA =
-  /^(vollkorn-?)?(spirelli|spaghetti|penne|fusilli|farfalle|tagliatelle|makkaroni|maccheroni|rigatoni|tortiglioni|linguine|conchiglie|nudeln|bandnudeln|hörnchen\w*|gnocchi)\b|gouda|parmesan|hartkäse|reibekäse|bergkäse|emmentaler|pizzaschmelz/i;
-const SAUCE_HINT = /soße|sosse|sauce|sugo|pesto|bolognese|carbonara|gulasch|ragout|ragù|würzfleisch|\smit\s/i;
-
-// Platzhalter ohne echtes Gericht ("Pastateller nach Angebot") zeigen wir nicht
-const PLACEHOLDER = /nach angebot|laut aushang|siehe aushang|wechselnde[sn]? angebot/i;
-
-function isPastaExtra(category, name) {
-  return /pasta/i.test(category || "") && PASTA_EXTRA.test(name) && !SAUCE_HINT.test(name);
-}
-
-const lower = (list) => list.map((x) => x.toLowerCase());
-const ALLERGENS_L = lower(ALLERGENS);
-const ADDITIVES_L = lower(ADDITIVES);
-const MEAT_L = lower(MEAT);
-const DIET_L = lower(DIET);
-
-function cleanMeal(meal) {
-  const notes = [...new Set(meal.notes || [])];
-  const sides = [];
-  const allergens = [];
-  let hasMeat = false;
-  let saysVegan = false;
-  let saysVegetarian = false;
-
-  for (const note of notes) {
-    const n = note.trim();
-    const l = n.toLowerCase();
-    if (l.includes("alkohol")) {
-      allergens.push("Alkohol"); // wichtig für manche (z.B. Schwangere, Religion) – bei den Allergenen zeigen
-    } else if (ADDITIVES_L.some((a) => l.includes(a))) {
-      // andere Zusatzstoffe ("enthält Farbstoff") weglassen, sind keine Beilage
-    } else if (ALLERGENS_L.includes(l)) {
-      allergens.push(n);
-      if (l === "fisch") hasMeat = true;
-    } else if (MEAT_L.includes(l)) {
-      hasMeat = true;
-    } else if (DIET_L.includes(l)) {
-      if (l === "vegan") saysVegan = true;
-      if (l === "vegetarisch") saysVegetarian = true;
-    } else if (!ADDITIVES_L.includes(l)) {
-      sides.push(n); // alles andere sind Beilagen wie "Dillsoße" oder "Reis"
-    }
-  }
-
-  const name = (meal.name || "").replace(/\s+/g, " ").trim();
-  const cat = (meal.category || "").toLowerCase();
-  const meatInName = MEAT_IN_NAME.test(name) && !MEAT_SUBSTITUTE.test(name);
-
-  // Ernährungsform – im Zweifel lieber gar kein Label als ein falsches:
-  // 1. Steht "vegan" im Namen, ist es vegan.
-  // 2. Klingt der Name nach Fleisch/Fisch, gibt es kein Label.
-  // 3. Pasta/Pizza: Angaben gelten für die ganze Theke. Höchstens
-  //    "vegetarisch", und nur wenn an der Theke kein Fleisch angegeben ist.
-  // 4. Sonst: Kategorie ("Veganes Gericht") oder die Angaben zum Gericht.
-  let diet = null;
-  if (/vegan/i.test(name)) diet = "vegan";
-  else if (meatInName) diet = null;
-  else if (SHARED_NOTES_CATEGORY.test(cat)) diet = !hasMeat && (saysVegan || saysVegetarian) ? "vegetarisch" : null;
-  else if (cat.includes("vegan")) diet = "vegan";
-  else if (cat.includes("vegetar")) diet = "vegetarisch";
-  else if (!hasMeat && saysVegan) diet = "vegan";
-  else if (!hasMeat && saysVegetarian) diet = "vegetarisch";
-  // Der Wok ohne Topping ist immer vegetarisch (Fleisch gibt es nur als Topping)
-  if (/wok/i.test(cat) && !meatInName && !diet) diet = "vegetarisch";
-
-  return {
-    id: meal.id,
-    name,
-    category: meal.category || "",
-    price: meal.prices?.students ?? null,
-    sides,
-    allergens: [...new Set(allergens)],
-    diet,
-    isMain: !EXTRA_CATEGORY.test(meal.category || ""),
-  };
-}
-
-// Wok: Das Studentenwerk listet den Wok oft zweimal – ohne Topping (z.B. 2,50 €)
-// und mit Topping (z.B. 3,50 €, Beilagen „Putengeschnetzeltes …, Brokkoli
-// Knuspernuggets (vegetarisch)"). Die Namen sind gleich oder fast gleich.
-const compact = (n) => n.toLowerCase().replace(/["„“”'`´]/g, "").replace(/[\s-]+/g, "");
-const words = (n) => n.toLowerCase().replace(/["„“”'`´]/g, "").split(/[\s-]+/).filter(Boolean);
-function wordMatch(x, y) {
-  if (x === y) return true;
-  let i = 0;
-  while (i < x.length && i < y.length && x[i] === y[i]) i++;
-  return i >= 5 && i >= 0.6 * Math.min(x.length, y.length);
-}
-function similarName(a, b) {          // gleiche Regel wie sameDish in src/helpers.js
-  let A = words(a), B = words(b);
-  if (A.length > B.length) [A, B] = [B, A];
-  return A.length >= 2 && B.length - A.length <= 2 && A.every((x) => B.some((y) => wordMatch(x, y)));
-}
-
-export function cleanDays(days) {
-  return (Array.isArray(days) ? days : []).map((day) => {
-    const seen = new Map();
-    const meals = [];
-    for (const m of day.meals || []) {
-      const meal = cleanMeal(m);
-      if (isPastaExtra(meal.category, meal.name)) continue; // nur Soßen zeigen
-      if (PLACEHOLDER.test(meal.name)) continue; // "nach Angebot" sagt nichts
-      // doppelte Einträge entfernen – auch wenn sie sich nur in Leerzeichen/
-      // Bindestrichen unterscheiden („Gemüsepfanne" / „Gemüse Pfanne"); beim Wok
-      // auch bei fast gleichem Namen (ohne / mit Topping)
-      const key = `${meal.category}|${compact(meal.name)}`;
-      const first = seen.get(key)
-        || (/wok/i.test(meal.category) && meals.find((x) => x.category === meal.category && similarName(x.name, meal.name)));
-      if (first) {
-        // Angaben zusammenführen; der kürzere Name bleibt (meist der Grundname
-        // ohne „… und Topping"), so wird immer unter demselben Namen bewertet
-        if (meal.name.length < first.name.length) first.name = meal.name;
-        first.sides = [...new Set([...first.sides, ...meal.sides])];
-        first.allergens = [...new Set([...first.allergens, ...meal.allergens])];
-        if (first.diet !== meal.diet) first.diet = first.diet && meal.diet ? "vegetarisch" : null;
-        // zwei Preise: günstiger = ohne Topping, teurer = mit Topping
-        const prices = [first.price, first.toppingPrice, meal.price].filter((p) => p != null);
-        if (prices.length) {
-          first.price = Math.min(...prices);
-          const max = Math.max(...prices);
-          if (max > first.price) first.toppingPrice = max;
-        }
-        continue;
-      }
-      seen.set(key, meal);
-      meals.push(meal);
-    }
-    return { date: day.date, closed: !!day.closed, meals };
-  });
-}
-
-// Datum in deutscher Zeit, verschoben um "offset" Tage, als "2026-10-20"
-export function berlinDate(offset = 0) {
-  const today = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Berlin" }).format(new Date());
-  const d = new Date(today + "T12:00:00Z");
-  d.setUTCDate(d.getUTCDate() + offset);
-  return d.toISOString().slice(0, 10);
-}
-
-// Der letzte Mensatag vor heute (zum Nachbewerten): Di–Fr = gestern,
-// Sa/So/Mo = Freitag. Gibt es dafür nichts, eben keinen.
-async function fetchPreviousDay(canteenId) {
-  const weekday = new Date(berlinDate(0) + "T12:00:00Z").getUTCDay(); // 0 = So
-  const date = berlinDate(weekday === 1 ? -3 : weekday === 0 ? -2 : -1);
-  try {
-    const r = await fetch(`https://openmensa.org/api/v2/canteens/${canteenId}/days/${date}/meals`, {
-      headers: { Accept: "application/json" },
-    });
-    if (!r.ok) return null; // 404 = an dem Tag geschlossen
-    const meals = await r.json();
-    return Array.isArray(meals) && meals.length > 0 ? { date, closed: false, meals } : null;
-  } catch {
-    return null;
-  }
-}
+export { CANTEENS };
 
 export default async function handler(req, res) {
-  const canteenId = Number(req.query?.canteen);
-
   // Ohne Nummer: nur die Liste der Mensen zurückgeben.
   if (!req.query?.canteen) {
     res.setHeader("Cache-Control", "s-maxage=86400");
@@ -232,32 +22,21 @@ export default async function handler(req, res) {
   }
 
   // Nur unsere eigenen Mensen erlauben, nichts anderes abfragen.
-  const canteen = CANTEENS.find((c) => c.id === canteenId);
+  const canteen = CANTEENS.find((c) => c.id === Number(req.query.canteen));
   if (!canteen) {
     return res.status(400).json({ error: "Unbekannte Mensa." });
   }
 
   try {
-    const url = `https://openmensa.org/api/v2/canteens/${canteen.id}/meals`;
-    const previousReq = fetchPreviousDay(canteen.id); // läuft parallel
-    const response = await fetch(url, { headers: { Accept: "application/json" } });
-
-    if (response.status === 404) {
-      return res.status(200).json({ canteen, days: [] });
-    }
-    if (!response.ok) {
-      throw new Error(`OpenMensa antwortet mit Status ${response.status}`);
-    }
-
-    const upcoming = await response.json();
-    const previous = await previousReq;
-    const days = cleanDays(previous ? [previous, ...upcoming] : upcoming);
-
+    const { days, source } = await loadCanteen(canteen);
     // 15 Minuten zwischenspeichern, damit wir OpenMensa nicht überlasten.
-    res.setHeader("Cache-Control", "s-maxage=900, stale-while-revalidate=3600");
-    return res.status(200).json({ canteen, days });
+    // Kam die Liste nur aus den gemerkten Gerichten (OpenMensa nicht erreichbar),
+    // schon nach 1 Minute wieder neu versuchen.
+    res.setHeader("Cache-Control", source === "plan" ? "s-maxage=900, stale-while-revalidate=3600" : "s-maxage=60");
+    return res.status(200).json({ canteen, days, source, stand: new Date().toISOString() });
   } catch (err) {
     console.error(err);
+    res.setHeader("Cache-Control", "no-store");
     return res.status(502).json({ error: "Speiseplan gerade nicht erreichbar." });
   }
 }

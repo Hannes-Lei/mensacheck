@@ -38,12 +38,19 @@ export default function AuthSheet({ onClose, note, onLegal = () => {} }) {
     }
 
     setBusy(true);
+    if (mode === "register") {
+      // Namen gibt es nur einmal – egal ob groß oder klein geschrieben
+      const wanted = username.trim().replace(/\s+/g, " ").slice(0, 19);
+      const { data: taken } = await supabase.from("profiles").select("id")
+        .ilike("username", wanted.replace(/[%_\\]/g, "\\$&")).limit(1);
+      if (taken?.length) { setBusy(false); return setError("Den Namen gibt es schon. Probier einen anderen."); }
+    }
     const { data, error: err } =
       mode === "register"
         ? await supabase.auth.signUp({
             email: email.trim(),
             password,
-            options: { data: { username: username.trim().slice(0, 19) } },
+            options: { data: { username: username.trim().replace(/\s+/g, " ").slice(0, 19) } },
           })
         : await supabase.auth.signInWithPassword({ email: email.trim(), password });
     setBusy(false);

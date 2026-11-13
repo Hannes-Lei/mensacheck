@@ -194,12 +194,15 @@ export default function ProfileTab({
       .then(({ data }) => !cancelled && setRatings(data || []));
 
     // Durchschnitt aller Zeiten pro Gericht (für die Lieblingsgerichte)
-    supabase
-      .rpc("get_ranking", { p_since: null, p_canteen: null, p_min_votes: 1 })
-      .then(({ data }) => {
-        if (cancelled) return;
-        setDishAvg(Object.fromEntries((data || []).map((r) => [dishKey(r.canteen_id, r.meal_name), r])));
-      });
+    // (nur für die eigenen Lieblingsgerichte – vorher wurde die ganze Rangliste geladen)
+    const favKeys = [...new Set(favoritesList.map((f) => dishKey(f.canteen_id, f.meal_name).split("|")[1]))];
+    if (favKeys.length) {
+      supabase.from("dish_stats").select("canteen_id, dish, avg_stars, votes").in("dish", favKeys)
+        .then(({ data }) => {
+          if (cancelled) return;
+          setDishAvg(Object.fromEntries((data || []).map((r) => [`${r.canteen_id}|${r.dish}`, r])));
+        });
+    } else setDishAvg({});
 
     return () => { cancelled = true; };
   }, [active, userId]);

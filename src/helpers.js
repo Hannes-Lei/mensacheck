@@ -1,6 +1,10 @@
 // ============================================================================
 // Kleine Hilfsfunktionen, die überall in der App gebraucht werden
 // ============================================================================
+// Alles rund um Gerichtnamen (gleiches Gericht? Fleisch oder nicht?) steht in
+// api/_dishes.js – dieselbe Datei benutzt auch der Server, damit App und
+// Server nie verschieden rechnen.
+import { dishText as sharedText, dishKey as sharedKey, nameMeat, toppingIsVeg, toppingLabel } from "../api/_dishes.js";
 
 // Heutiges Datum in deutscher Zeit als "2026-10-19"
 export function todayBerlin() {
@@ -70,48 +74,22 @@ export function shortDate(iso) {
   return `${Number(d)}.${Number(m)}.`;
 }
 
-// Vergleichsname eines Gerichts: klein, ohne Anführungszeichen, einfache
-// Leerzeichen. Muss genau zu dish_key() in Supabase (Skript 05) passen.
-// Hängende Wörter am Ende („… auf", „… mit,") zählen nicht – gleiche Regel wie
-// dish_key in Supabase (SQL 15), sonst passen die Bewertungen nicht zusammen.
-const DANGLING = /(?:[\s,;:–-]+(?:auf|mit|an|und|dazu|in|im|vom|von|aus|zu|nach|sowie|oder))*[\s,;:–-]*$/;
-// Gerichtname zum Vergleichen: klein, ohne Anführungszeichen, ohne hängende Wörter
-export function dishText(mealName) {
-  return String(mealName || "")
-    .replace(/["„“”'`´]/g, "")
-    .toLowerCase()
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(DANGLING, "");
-}
-// Schlüssel eines Gerichts: zusätzlich ohne Leerzeichen und Bindestriche, damit
-// „Pilz Gemüsepfanne" und „Pilz Gemüse-Pfanne" dasselbe sind (= dish_key in SQL 17)
-export function dishName(mealName) {
-  return dishText(mealName).replace(/[\s-]+/g, "");
-}
-
-// Fast gleicher Name? Für Gerichte, die das Studentenwerk im Laufe des Tages
-// umbenennt („Quarkkeulchen mit Apfelmus" → „sächsische Quarkkeulchen mit Apfelmus").
-// Alle Wörter des kürzeren Namens müssen im längeren stecken, höchstens 2 Wörter
-// mehr. Wörter mit gleichem Anfang („Tomatensoße"/„Tomatensosse") zählen als gleich.
-// Gleiche Regel wie dish_similar in Supabase (SQL 16).
-const dishWords = (n) => dishText(n).split(/[\s-]+/).filter(Boolean);
-function wordMatch(x, y) {
-  if (x === y) return true;
-  let i = 0;
-  while (i < x.length && i < y.length && x[i] === y[i]) i++;
-  return i >= 5 && i >= 0.6 * Math.min(x.length, y.length);
-}
-export function sameDish(a, b) {
-  let A = dishWords(a), B = dishWords(b);
-  if (A.length > B.length) [A, B] = [B, A];
-  if (!A.every((x) => B.some((y) => wordMatch(x, y)))) return false;
-  return A.length >= 2 && B.length - A.length <= 2;
-}
+// Vergleichsform eines Gerichtnamens und Schlüssel eines Gerichts – siehe
+// api/_dishes.js (und dish_text / dish_key in Supabase, SQL 19)
+export const dishText = sharedText;
+export const dishName = sharedKey;
 
 // Schlüssel für ein Gericht über alle Tage hinweg (Favoriten, Ranglisten)
 export function dishKey(canteenId, mealName) {
   return `${canteenId}|${dishName(mealName)}`;
+}
+
+// Ist das ein Verbindungsproblem (WLAN weg, Funkloch)? Die Browser melden das
+// alle anders: "Failed to fetch" (Chrome), "Load failed" (iPhone), "NetworkError" (Firefox)
+export function isNetworkError(err) {
+  const msg = String(err?.message || err || "").toLowerCase();
+  return /failed to fetch|load failed|networkerror|network request failed|fetch|aborted|timeout|offline/.test(msg)
+    || (typeof navigator !== "undefined" && navigator.onLine === false);
 }
 
 // Fehlermeldungen von Supabase verständlich machen
@@ -124,7 +102,8 @@ export function friendlyError(err) {
   if (msg.includes("email") && msg.includes("invalid")) return "Bitte eine gültige E-Mail-Adresse eingeben.";
   if (msg.includes("rate limit")) return "Zu viele Versuche. Bitte kurz warten.";
   if (msg.includes("row-level security")) return "Das darfst du (noch) nicht bewerten.";
-  if (msg.includes("fetch")) return "Keine Verbindung. Bist du online?";
+  if (isNetworkError(err)) return "Keine Verbindung. Versuch es gleich noch einmal.";
+  if (err?.code === "23505" || msg.includes("duplicate key")) return "Das gibt es schon.";
   return err?.message || "Da ist etwas schiefgelaufen.";
 }
 
@@ -200,68 +179,46 @@ function fullWeeks(dates) {
   return [...weeks.values()].filter((n) => n >= 5).length;
 }
 
-// Am Pastateller nur Soßen zeigen, nicht Nudelsorte oder Käse
-// (gleiche Regel wie in api/mensa.js)
-const PASTA_EXTRA =
-  /^(vollkorn-?)?(spirelli|spaghetti|penne|fusilli|farfalle|tagliatelle|makkaroni|maccheroni|rigatoni|tortiglioni|linguine|conchiglie|nudeln|bandnudeln|hörnchen\w*|gnocchi)\b|gouda|parmesan|hartkäse|reibekäse|bergkäse|emmentaler|pizzaschmelz/i;
-const SAUCE_HINT = /soße|sosse|sauce|sugo|pesto|bolognese|carbonara|gulasch|ragout|ragù|würzfleisch|\smit\s/i;
-
-export function isPastaExtra(category, name) {
-  return /pasta/i.test(category || "") && PASTA_EXTRA.test(name || "") && !SAUCE_HINT.test(name || "");
-}
-
-// Platzhalter ohne echtes Gericht ("Pastateller nach Angebot") – gleiche Regel wie in api/mensa.js
-const PLACEHOLDER = /nach angebot|laut aushang|siehe aushang|wechselnde[sn]? angebot/i;
-export function isPlaceholderMeal(name) {
-  return PLACEHOLDER.test(name || "");
-}
-
-// Ältere gemerkte Gerichte: "enthält Alkohol" o.Ä. stand dort noch als Beilage.
-// Alkohol wandert zu den Allergenen, andere Zusatzstoffe fallen weg.
-const ADDITIVE_HINT = /alkohol|farbstoff|konservierung|antioxidation|phosphat|geschmacksverstärker|süßungsmittel|koffein|chinin|geschwefelt|geschwärzt|gewachst/i;
-export function cleanSidesAndAllergens(sides = [], allergens = []) {
-  const extra = sides.some((x) => /alkohol/i.test(x)) ? ["Alkohol"] : [];
-  return {
-    sides: sides.filter((x) => !ADDITIVE_HINT.test(x)),
-    allergens: [...new Set([...allergens, ...extra])],
-  };
-}
-
 // Reihenfolge bei "Heute": 0 Fleisch/Fisch · 1 vegan/vegetarisch · 2 Pasta/Pizza · 3 der Rest
-const MEAT_WORDS = /fleisch|hack|schwein|rind|kalb|lamm|wild|geflügel|hähnchen|huhn|chicken|pute|ente|schinken|speck|bacon|salami|wurst|würst|chorizo|kassler|leberkäse|frikadelle|bulette|cevapcici|döner|bolognese|fisch|lachs|scholle|kabeljau|forelle|hering|matjes|garnele|shrimp|calamari|muschel|thunfisch|seelachs|schnitzel|gulasch|roulade|braten|steak|geschnetzeltes/i;
-const MEAT_SUBST = /tofu|soja|seitan|vegan|vegetar|veggie|planted|pflanz|fleischlos|like /i;
+// (m.kind kommt vom Server: vegan · vegetarisch · fleisch · fisch · null = unbekannt)
 export function mealGroup(m) {
   const cat = m.category || "";
   if (/pasta|pizza/i.test(cat)) return 2;
-  if (m.diet === "vegan" || m.diet === "vegetarisch" || /vegan|vegetar/i.test(cat)) return 1;
-  if (/fleisch|fisch|geflügel/i.test(cat) || (MEAT_WORDS.test(m.name || "") && !MEAT_SUBST.test(m.name || ""))) return 0;
+  if (m.kind === "vegan" || m.kind === "vegetarisch" || m.diet === "vegan" || m.diet === "vegetarisch") return 1;
+  if (m.kind === "fleisch" || m.kind === "fisch") return 0;
+  if (/vegan|vegetar/i.test(cat)) return 1;
+  if (/fleisch|fisch|geflügel/i.test(cat) || nameMeat(m.name)) return 0;
   return 3;
 }
 
 // ---- Wok: ohne Topping, mit Fleisch oder veggie? ---------------------------
 // Den Wok gibt es ohne Topping (meist 2,50 €) oder mit Topping (meist 3,50 €),
-// dabei meist ein Fleisch- und ein veggie Angebot, z.B. „mit Putengeschnetzeltes …,
-// Brokkoli Knuspernuggets (vegetarisch)". Beim Bewerten tippt man das Topping an;
-// nichts angetippt = ohne Topping (ratings.variant bleibt leer).
+// dabei meist ein Fleisch- und ein veggie Angebot. Beim Bewerten tippt man das
+// Topping an; nichts angetippt = ohne Topping (ratings.variant bleibt leer).
+// Welche Toppings es gibt, liefert der Server (m.toppings).
 export const NO_TOPPING = "ohne Topping"; // nur noch für ältere Bewertungen
-const VEG_MARK = /\((vegetarisch|vegan)\)/i;
-export const variantIsVeg = (s) => VEG_MARK.test(s || "") || MEAT_SUBST.test(s || "") || !MEAT_WORDS.test(s || "");
-export const variantLabel = (s) => String(s || "").replace(/\s*\((vegetarisch|vegan)\)\s*/gi, " ").trim();
+export const variantIsVeg = (s) => toppingIsVeg(s);
+export const variantLabel = (s) => toppingLabel(s);
 export const variantIcon = (s) => (s === NO_TOPPING ? "🍚" : variantIsVeg(s) ? "🥦" : "🍗");
+// Gleiches Topping, auch wenn es leicht anders geschrieben ist?
+export const sameTopping = (a, b) => !!a && !!b && (a === b || sharedKey(toppingLabel(a)) === sharedKey(toppingLabel(b)));
 export function mealVariants(m) {
   if (!/wok/i.test(m?.category || "")) return null;
-  const toppings = (m.sides || []).filter((x) => VEG_MARK.test(x) || MEAT_SUBST.test(x) || MEAT_WORDS.test(x));
-  if (toppings.length === 0) return null;
-  return toppings.map((x) => ({ value: x, label: variantLabel(x), icon: variantIcon(x) }));
+  // ältere Antworten des Servers hatten die Toppings noch bei den Beilagen
+  const list = Array.isArray(m.toppings) ? m.toppings.map((t) => (typeof t === "string" ? t : t.name)) : m.sides || [];
+  if (list.length === 0) return null;
+  return list.map((x) => ({ value: x, label: variantLabel(x), icon: variantIcon(x) }));
 }
 
-export const nameHasMeat = (n) => MEAT_WORDS.test(n || "") && !MEAT_SUBST.test(n || "");
+export const nameHasMeat = (n) => !!nameMeat(n);
 
-// Ohne Fleisch gegessen? Wok ohne Topping ist immer vegetarisch, bei einem
-// Topping zählt das Topping, sonst der Name.
+// Ohne Fleisch gegessen? Beim Wok zählt das gewählte Topping (ohne Topping ist
+// er vegetarisch), sonst die Kategorie des Studentenwerks, sonst der Name.
 export function isMeatless(r) {
   if (r.variant === NO_TOPPING) return true;
   if (r.variant) return variantIsVeg(r.variant);
-  const n = r.meal_name || "";
-  return !!n && (!MEAT_WORDS.test(n) || MEAT_SUBST.test(n));
+  const cat = r.category || "";
+  if (/vegan|vegetar/i.test(cat)) return true;
+  if (/fleisch|fisch/i.test(cat) && !/fleischlos|fleischfrei/i.test(cat)) return false;
+  return !!r.meal_name && !nameMeat(r.meal_name);
 }

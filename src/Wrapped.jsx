@@ -158,27 +158,12 @@ function computeWrapped(mine, all, userId, friends, canteenName) {
   for (const d of days) { const k = new Date(d + "T12:00:00Z").getUTCDay(); wd[k] = (wd[k] || 0) + 1; }
   const favDay = Object.entries(wd).sort((a, b) => b[1] - a[1])[0];
 
-  // Wie streng im Vergleich? (alle mit mind. 3 Bewertungen im Zeitraum)
-  let stricter = null;
-  if (all) {
-    const per = {};
-    for (const r of all) { (per[r.user_id] ||= []).push(Number(r.stars)); }
-    const avgs = Object.entries(per).filter(([u, s]) => u !== userId && s.length >= 3).map(([, s]) => s.reduce((a, b) => a + b, 0) / s.length);
-    if (avgs.length >= 3 && n >= 3) stricter = Math.round((avgs.filter((a) => a > avg).length / avgs.length) * 100);
-  }
-
-  // Mensa-Buddy: wer aus deinen Gruppen war am häufigsten am selben Tag in derselben Mensa?
-  let buddy = null;
-  if (all && friends?.size) {
-    const mineKeys = new Set(mine.map((r) => `${r.canteen_id}|${r.meal_date}`));
-    const cnt = {};
-    for (const r of all) {
-      if (!friends.has(r.user_id) || !mineKeys.has(`${r.canteen_id}|${r.meal_date}`)) continue;
-      (cnt[r.user_id] ||= new Set()).add(`${r.canteen_id}|${r.meal_date}`);
-    }
-    const top = Object.entries(cnt).map(([u, s]) => [u, s.size]).sort((a, b) => b[1] - a[1])[0];
-    if (top) buddy = { name: friends.get(top[0]), times: top[1] };
-  }
+  // Wie streng im Vergleich? Und wer ist dein Mensa-Buddy? Das rechnet die
+  // Datenbank (Funktion wrapped_compare) – vorher lud die App dafür alle
+  // Bewertungen aller Nutzer herunter.
+  const stricter = n >= 3 && all?.stricter != null ? Number(all.stricter) : null;
+  const buddy = all?.buddy && friends?.has(all.buddy.user_id)
+    ? { name: friends.get(all.buddy.user_id), times: Number(all.buddy.times) } : null;
 
   // Dein Mensa-Typ
   const canteens = Object.keys(byCanteen).length;
@@ -276,9 +261,8 @@ function WrappedStory({ period, ratings, userId, friends, canteenName, onClose }
   const [i, setI] = useState(0);
 
   useEffect(() => {
-    supabase.from("ratings").select("user_id, canteen_id, meal_date, stars")
-      .gte("meal_date", period.start).lte("meal_date", period.end).limit(20000)
-      .then(({ data }) => setAll(data || []));
+    supabase.rpc("wrapped_compare", { p_start: period.start, p_end: period.end })
+      .then(({ data }) => setAll(data || {}));
   }, [period]);
   useEffect(() => {
     const onKey = (e) => { if (e.key === "Escape") onClose(); if (e.key === "ArrowRight") setI((x) => x + 1); if (e.key === "ArrowLeft") setI((x) => Math.max(0, x - 1)); };

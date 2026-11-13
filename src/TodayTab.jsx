@@ -2,7 +2,7 @@ import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useR
 import { usePolling } from "./usePolling.js";
 import { supabase } from "./supabase.js";
 import {
-  todayBerlin, daysAgo, isWeekend, lastMensaDay, formatPrice, formatAvg, dayLabel, friendlyError, dishKey, dishName, sameDish, mealVariants, variantLabel, variantIcon, NO_TOPPING, nameHasMeat, shortDate, isPastaExtra, isPlaceholderMeal, cleanSidesAndAllergens, mealGroup,
+  todayBerlin, daysAgo, isWeekend, lastMensaDay, formatPrice, formatAvg, dayLabel, friendlyError, dishKey, dishName, mealVariants, variantLabel, variantIcon, NO_TOPPING, sameTopping, shortDate, mealGroup, isNetworkError,
 } from "./helpers.js";
 import { Stars, StarLine, Chip, DietBadge, Avatar, formatStars, styles, C, FONT_HEAD } from "./ui.jsx";
 import { CommentItem, THREAD_SELECT } from "./Interactions.jsx";
@@ -112,7 +112,7 @@ function MealCard({
   const variants = mealVariants(m);
   const [picked, setPicked] = useState(null);
   const variant = mine?.variant || picked;
-  const sideList = variants ? m.sides.filter((x) => !variants.some((v) => v.value === x)) : m.sides;
+  const sideList = variants ? (m.sides || []).filter((x) => !variants.some((v) => sameTopping(v.value, x))) : m.sides || [];
 
   function handleRate(stars) {
     if (!canRate) return needLogin();
@@ -121,7 +121,7 @@ function MealCard({
 
   function pickVariant(v) {
     if (!canRate) return needLogin();
-    const next = variant === v ? null : v;
+    const next = sameTopping(variant, v) ? null : v;
     setPicked(next);
     if (mine?.stars) onVariant(m, next);
   }
@@ -192,7 +192,7 @@ function MealCard({
         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, marginTop: 10 }} role="group" aria-label="Mit Topping?">
           <span style={{ fontSize: 13, fontWeight: 700, color: C.muted, marginRight: 2 }}>Mit Topping?</span>
           {variants.map((v) => (
-            <Chip key={v.value} active={variant === v.value} onClick={() => pickVariant(v.value)} aria-pressed={variant === v.value}>
+            <Chip key={v.value} active={sameTopping(variant, v.value)} onClick={() => pickVariant(v.value)} aria-pressed={sameTopping(variant, v.value)}>
               {v.icon} {v.label}
             </Chip>
           ))}
@@ -269,60 +269,6 @@ function MealCard({
 }
 
 
-// Ein Eintrag aus dem Archiv (Tabelle menu_items) als Gericht für die Anzeige
-function archivedMeal(r) {
-  const { sides, allergens } = cleanSidesAndAllergens(r.sides || [], r.allergens || []);
-  return {
-    id: `archiv-${r.meal_name}`,
-    name: r.meal_name,
-    category: r.category || "",
-    price: r.price,
-    sides,
-    allergens,
-    // Wok ohne Topping ist immer vegetarisch (gleiche Regel wie in api/mensa.js)
-    diet: r.diet || (/wok/i.test(r.category || "") && !nameHasMeat(r.meal_name) ? "vegetarisch" : null),
-    isMain: r.is_main ?? true,
-  };
-}
-
-// Die heutigen Gerichte in Supabase merken (Tabelle menu_items). Schon
-// gemerkte Gerichte werden übersprungen, Fehler stören die Anzeige nicht.
-function rememberToday(canteenId, day) {
-  if (!day) return;
-  const rows = new Map();
-  for (const m of day.meals) {
-    if (rows.has(m.name)) continue;
-    rows.set(m.name, {
-      canteen_id: canteenId,
-      meal_date: day.date,
-      meal_name: m.name,
-      category: m.category,
-      price: m.price,
-      sides: m.sides,
-      allergens: m.allergens,
-      diet: m.diet,
-      is_main: m.isMain,
-    });
-  }
-  supabase
-    .from("menu_items")
-    .upsert([...rows.values()], { onConflict: "canteen_id,meal_date,meal_name", ignoreDuplicates: true })
-    .then(({ error }) => error && console.warn("Gerichte merken:", error.message));
-}
-
-// Zwei Einträge desselben Gerichts zusammenführen (Beilagen, Allergene, Preise)
-function mergeMeal(t, m) {
-  t.sides = [...new Set([...(t.sides || []), ...(m.sides || [])])];
-  t.allergens = [...new Set([...(t.allergens || []), ...(m.allergens || [])])];
-  const prices = [t.price, t.toppingPrice, m.price, m.toppingPrice].filter((p) => p != null).map(Number);
-  if (prices.length) {
-    t.price = Math.min(...prices);
-    const max = Math.max(...prices);
-    t.toppingPrice = max > t.price ? max : null;
-  }
-  if (t.diet && m.diet && t.diet !== m.diet) t.diet = "vegetarisch";
-}
-
 // Bewertungen mehrerer Schreibweisen eines Gerichts zusammenrechnen
 function mergeStats(list) {
   const xs = list.filter(Boolean);
@@ -346,17 +292,37 @@ function byTotal(A, B) {
   return (b.votes >= 2) - (a.votes >= 2) || b.avg_stars - a.avg_stars || b.votes - a.votes;
 }
 
-// Letzter Mensatag aus den gemerkten Gerichten (falls OpenMensa den Tag
-// nicht mehr liefert)
-async function archivedPastDay(canteenId, date) {
-  const { data } = await supabase
-    .from("menu_items")
-    .select("meal_date")
-    .eq("canteen_id", canteenId)
-    .eq("meal_date", date)
-    .limit(1);
-  return data?.length ? { date, closed: false, meals: [] } : null;
+// Der Speiseplan wird auf dem Handy zwischengespeichert: Die App zeigt ihn sofort
+// (und auch, wenn das WLAN gerade weg ist) und holt im Hintergrund den neuen.
+const planCacheKey = (canteenId) => `schmausi-plan-${canteenId}`;
+function readPlanCache(canteenId) {
+  try {
+    const c = JSON.parse(localStorage.getItem(planCacheKey(canteenId)));
+    return c && Array.isArray(c.days) ? c : null;
+  } catch { return null; }
 }
+function writePlanCache(canteenId, data) {
+  try { localStorage.setItem(planCacheKey(canteenId), JSON.stringify({ days: data.days, source: data.source, saved: Date.now() })); } catch { /* Speicher voll: egal */ }
+}
+async function fetchPlan(canteenId) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 12000);
+  try {
+    const r = await fetch(`/api/mensa?canteen=${canteenId}`, { signal: ctrl.signal });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || "Fehler beim Laden.");
+    return data;
+  } finally { clearTimeout(timer); }
+}
+// "11:42 Uhr" bzw. "gestern, 13:05 Uhr"
+function standText(ts, today) {
+  const d = new Date(ts);
+  const day = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Berlin" }).format(d);
+  const time = d.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Berlin" }) + " Uhr";
+  return day === today ? time : `${day === daysAgo(1) ? "gestern" : shortDate(day)}, ${time}`;
+}
+// Alle Schlüssel eines Gerichts: der Name, der gilt, und frühere Schreibweisen
+const keysOf = (m) => [...new Set([m.name, ...(m.aliases || [])].map(dishName))];
 
 function matchesDiet(m, dietFilter) {
   if (dietFilter === "vegan") return m.diet === "vegan";
@@ -385,53 +351,82 @@ export default function TodayTab({
 
   const [stats, setStats] = useState({});
   const [mine, setMine] = useState({});
-  const [archive, setArchive] = useState(null);    // gemerkte Gerichte des Tages
-  const [ratedMeals, setRatedMeals] = useState({}); // bewertete Gerichte des Tages
+  const [stale, setStale] = useState(null);         // { at, failed }: es wird ein gespeicherter Plan gezeigt
+  const [planSource, setPlanSource] = useState("plan");
+  const [attempt, setAttempt] = useState(0);        // +1 = Plan neu holen
   const [totals, setTotals] = useState({});         // Gesamtbewertung je Gericht (alle Tage)
   const [friendHistory, setFriendHistory] = useState([]); // letzte Bewertungen der Freunde
 
-  // 1) Aktueller Speiseplan laden – und die heutigen Gerichte merken
+  // 1) Speiseplan laden. Der Server liefert letzten Mensatag, heute (samt
+  //    Gerichten, die nicht mehr auf dem Plan stehen) und die kommenden Tage.
+  const todayRef = useRef(today);
+  const shownRef = useRef("");
+  const applyPlan = useCallback((data) => {
+    // Samstag und Sonntag gibt es als Tage nicht
+    const open = (data.days || []).filter((d) => !d.closed && d.meals.length > 0 && !isWeekend(d.date));
+    const upcoming = open.filter((d) => d.date >= today).sort((a, b) => (a.date < b.date ? -1 : 1));
+    // Letzter Mensatag vor heute ("gestern", am Wochenende/Montag der
+    // Freitag) – nur der darf noch bewertet werden
+    const past = open.find((d) => d.date === lastMensaDay(today));
+    // Ausgewählt: heute. Am Wochenende weiterhin der Freitag.
+    const start = upcoming.some((d) => d.date === today) ? today
+      : isWeekend(today) && past ? past.date
+      : upcoming[0]?.date || past?.date || null;
+    const list = past ? [past, ...upcoming] : upcoming;
+    const sig = JSON.stringify(list);
+    if (sig !== shownRef.current) { shownRef.current = sig; setDays(list); }
+    setPlanSource(data.source || "plan");
+    // Beim Mensa-Wechsel den gewählten Tag behalten, wenn die neue Mensa an
+    // dem Tag geöffnet hat – sonst wie bisher heute (bzw. nächster Tag)
+    const keep = dateRef.current && list.some((d) => d.date === dateRef.current) ? dateRef.current : start;
+    setDate(keep);
+    setAnchor(keep < start ? keep : start);   // Tagesleiste wie gewohnt: heute steht links
+  }, [today]);
+
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
+    // Neuer Tag (App war über Nacht offen): wieder bei "Heute" anfangen
+    if (todayRef.current !== today) { todayRef.current = today; dateRef.current = null; }
     setError(null);
-    fetch(`/api/mensa?canteen=${canteenId}`)
-      .then(async (r) => {
-        const data = await r.json();
-        if (!r.ok) throw new Error(data.error || "Fehler beim Laden.");
-        return data;
-      })
-      .then(async (data) => {
+    // Erst den gespeicherten Plan zeigen (sofort da), dann den neuen holen
+    const cached = readPlanCache(canteenId);
+    const usable = !!cached && cached.days.some((d) => d.date >= lastMensaDay(today) && d.meals?.length);
+    if (usable) { applyPlan(cached); setLoading(false); }
+    else { shownRef.current = ""; setDays([]); setDate(null); setLoading(true); }
+    fetchPlan(canteenId)
+      .then((data) => {
         if (cancelled) return;
-        // Samstag und Sonntag gibt es als Tage nicht
-        const open = (data.days || []).filter((d) => !d.closed && d.meals.length > 0 && !isWeekend(d.date));
-        const upcoming = open.filter((d) => d.date >= today).sort((a, b) => (a.date < b.date ? -1 : 1));
-        rememberToday(canteenId, upcoming.find((d) => d.date === today));
-        // Letzter Mensatag vor heute ("gestern", am Wochenende/Montag der
-        // Freitag) – nur der darf noch bewertet werden
-        const prevDate = lastMensaDay(today);
-        const past = open.find((d) => d.date === prevDate) || (await archivedPastDay(canteenId, prevDate));
-        if (cancelled) return;
-        // Ausgewählt: heute. Am Wochenende weiterhin der Freitag.
-        const start = upcoming.some((d) => d.date === today) ? today
-          : isWeekend(today) && past ? past.date
-          : upcoming[0]?.date || past?.date || null;
-        const list = past ? [past, ...upcoming] : upcoming;
-        setDays(list);
-        // Beim Mensa-Wechsel den gewählten Tag behalten, wenn die neue Mensa an
-        // dem Tag geöffnet hat – sonst wie bisher heute (bzw. nächster Tag)
-        const keep = dateRef.current && list.some((d) => d.date === dateRef.current) ? dateRef.current : start;
-        setDate(keep);
-        setAnchor(keep < start ? keep : start);   // Tagesleiste wie gewohnt: heute steht links
+        writePlanCache(canteenId, data);
+        applyPlan(data);
+        setStale(null);
       })
-      .catch((e) => !cancelled && setError(e.message))
+      .catch((e) => {
+        if (cancelled) return;
+        if (usable) setStale({ at: cached.saved, failed: true });
+        else setError(isNetworkError(e) ? "Keine Verbindung – der Speiseplan lässt sich gerade nicht laden." : (e.message || "Der Speiseplan lässt sich gerade nicht laden."));
+      })
       .finally(() => !cancelled && setLoading(false));
     return () => { cancelled = true; };
-  }, [canteenId, today]);
+  }, [canteenId, today, attempt, applyPlan]);
 
-  // Namen der Gerichte laut Plan für den gewählten Tag
-  const planNames = useMemo(
-    () => (days.find((d) => d.date === date)?.meals || []).map((m) => m.name),
+  // Hat das Laden nicht geklappt: von selbst wieder versuchen, sobald das Netz
+  // zurück ist oder die App wieder nach vorne kommt – sonst alle 20 Sekunden
+  const failed = !!error || !!stale?.failed;
+  useEffect(() => {
+    if (!failed || !active) return;
+    const retry = () => { if (document.visibilityState === "visible") setAttempt((a) => a + 1); };
+    const id = setInterval(retry, 20000);
+    window.addEventListener("online", retry);
+    document.addEventListener("visibilitychange", retry);
+    return () => { clearInterval(id); window.removeEventListener("online", retry); document.removeEventListener("visibilitychange", retry); };
+  }, [failed, active]);
+  // Den Plan alle 10 Minuten auffrischen (z.B. „ausverkauft“), solange „Heute“ offen ist
+  usePolling(useCallback(() => setAttempt((a) => a + 1), []), 600000, active && !failed, { minGap: 300000 });
+
+  // Schlüssel der Gerichte des gewählten Tages (als Text, damit sich nur bei
+  // echten Änderungen etwas neu lädt)
+  const dayKeys = useMemo(
+    () => [...new Set((days.find((d) => d.date === date)?.meals || []).flatMap(keysOf))].filter(Boolean).join("\n"),
     [days, date]
   );
 
@@ -448,21 +443,8 @@ export default function TodayTab({
       ? supabase.from("ratings").select("meal_name, stars, comment, variant")
           .eq("user_id", userId).eq("canteen_id", canteenId).eq("meal_date", date)
       : Promise.resolve({ data: [] });
-    const ratedReq = supabase
-      .from("ratings")
-      .select("meal_name, category, price")
-      .eq("canteen_id", canteenId)
-      .eq("meal_date", date)
-      .limit(1000);
-    const archiveReq = supabase
-      .from("menu_items")
-      .select("meal_name, category, price, sides, allergens, diet, is_main, first_seen")
-      .eq("canteen_id", canteenId)
-      .eq("meal_date", date)
-      .order("first_seen", { ascending: true });
-
-    const [{ data: s }, { data: m }, { data: rated }, { data: arch }] =
-      await Promise.all([statsReq, mineReq, ratedReq, archiveReq]);
+    const [{ data: s }, { data: m }] = await Promise.all([statsReq, mineReq]);
+    if (!s) return; // keine Verbindung: die bisherigen Zahlen stehen lassen
 
     // Nach Gericht (dishName) zusammenfassen: korrigiert das Studentenwerk einen
     // Namen im Laufe des Tages, zählen beide Schreibweisen als ein Gericht.
@@ -476,15 +458,9 @@ export default function TodayTab({
     }
     setStats(byDish);
     setMine(Object.fromEntries((m || []).map((r) => [dishName(r.meal_name), r])));
-    const known = {};
-    for (const r of rated || []) known[r.meal_name] ??= r;
-    setRatedMeals(known);
-    setArchive(arch || []);
 
     // Gesamtbewertung aller Gerichte dieses Tages (über alle Tage hinweg)
-    const keys = [...new Set(
-      [...planNames, ...(arch || []).map((r) => r.meal_name), ...Object.keys(known)].map(dishName)
-    )].filter(Boolean);
+    const keys = dayKeys ? dayKeys.split("\n") : [];
     if (keys.length === 0) { setTotals({}); setFriendHistory([]); return; }
 
     const friendIds = [...(friends?.keys() || [])].filter((id) => id !== userId);
@@ -499,13 +475,13 @@ export default function TodayTab({
           .order("meal_date", { ascending: false }).limit(1000)
       : Promise.resolve({ data: [] });
     const [{ data: t }, { data: fr }] = await Promise.all([totalsReq, friendsReq]);
-    setTotals(Object.fromEntries((t || []).map((r) => [r.dish, r])));
-    setFriendHistory(fr || []);
-  }, [canteenId, date, userId, planNames, friends]);
+    if (t) setTotals(Object.fromEntries(t.map((r) => [r.dish, r])));
+    if (fr) setFriendHistory(fr);
+  }, [canteenId, date, userId, dayKeys, friends]);
 
   // Beim Wechsel von Mensa oder Tag alte Daten nicht kurz falsch anzeigen
   useEffect(() => {
-    setStats({}); setMine({}); setRatedMeals({}); setArchive(null); setTotals({}); setFriendHistory([]);
+    setStats({}); setMine({}); setTotals({}); setFriendHistory([]);
   }, [canteenId, date]);
 
   // Was haben die Freunde zuletzt zu welchem Gericht gesagt? (neueste je Freund)
@@ -522,34 +498,36 @@ export default function TodayTab({
     return out;
   }, [friendHistory, friends, avatars]);
 
-  // Gesamtbewertung – bei umbenannten Gerichten über alle Schreibweisen (siehe renames)
-  const totalOf = (name) => mergeStats(variants(name).map((k) => totals[k]));
-  const mineOf = (name) => variants(name).map((k) => mine[k]).find(Boolean);
-  const mineKey = (name) => variants(name).find((k) => mine[k]) || dishName(name);
+  // Gesamtbewertung – bei umbenannten Gerichten über alle Schreibweisen
+  const totalOf = (m) => mergeStats(keysOf(m).map((k) => totals[k]));
+  const mineOf = (m) => keysOf(m).map((k) => mine[k]).find(Boolean);
+  const mineKey = (m) => keysOf(m).find((k) => mine[k]) || dishName(m.name);
   useEffect(() => { loadRatings(); }, [loadRatings]);
   // Bewertungen ändern sich vor allem heute: nur dann alle 2 Min. nachladen,
   // und nur solange „Heute“ offen und die App im Vordergrund ist
   usePolling(loadRatings, 120000, active && date === today, { refreshOnEnable: true });
 
   // 3) Bewerten, Kommentieren, Entfernen
-  // Hast du das Gericht schon unter einer älteren Schreibweise bewertet,
-  // wird diese Bewertung geändert statt eine zweite angelegt.
-  const savedName = (meal) => mineOf(meal.name)?.meal_name || meal.name;
-
-  async function saveRating(meal, stars, comment, variant = mineOf(meal.name)?.variant ?? null) {
+  // Die Datenbank sorgt dafür, dass es je Gericht nur eine Bewertung gibt und
+  // sie beim Namen landet, der gilt (auch nach einer Umbenennung).
+  async function saveRating(meal, stars, comment, variant = mineOf(meal)?.variant ?? null) {
     const { error: err } = await supabase.from("ratings").upsert(
       {
-        user_id: userId, canteen_id: canteenId, meal_date: date, meal_name: savedName(meal),
+        user_id: userId, canteen_id: canteenId, meal_date: date, meal_name: meal.name,
         category: meal.category, price: meal.price, stars, comment: comment || null, variant,
       },
       { onConflict: "user_id,canteen_id,meal_date,meal_name" }
     );
-    if (err) { showToast(friendlyError(err)); return false; }
+    if (err) {
+      showToast(friendlyError(err));
+      if (/nicht auf dem Plan/.test(err.message || "")) setAttempt((a) => a + 1); // Plan ist veraltet: neu holen
+      return false;
+    }
     return true;
   }
 
   async function rate(meal, stars, variant = null) {
-    const k = mineKey(meal.name);
+    const k = mineKey(meal);
     const before = mine[k];
     const v = variant ?? before?.variant ?? null;
     setMine((p) => ({ ...p, [k]: { ...before, meal_name: before?.meal_name || meal.name, stars, variant: v } }));
@@ -560,7 +538,7 @@ export default function TodayTab({
   }
 
   async function removeRating(meal) {
-    const k = mineKey(meal.name);
+    const k = mineKey(meal);
     const before = mine[k];
     const hint = before?.comment ? " Dein Kommentar wird dabei auch gelöscht." : "";
     if (!window.confirm(`Deine Bewertung für „${meal.name}" entfernen?${hint}`)) return;
@@ -579,7 +557,7 @@ export default function TodayTab({
 
   // Wok: nachträglich ändern, was man dazu hatte
   async function changeVariant(meal, variant) {
-    const k = mineKey(meal.name);
+    const k = mineKey(meal);
     const before = mine[k];
     if (!before?.stars) return;
     setMine((p) => ({ ...p, [k]: { ...before, variant } }));
@@ -589,7 +567,7 @@ export default function TodayTab({
   }
 
   async function comment(meal, text) {
-    const current = mineOf(meal.name);
+    const current = mineOf(meal);
     if (!current?.stars) { showToast("Bitte zuerst Sterne vergeben."); return false; }
     const ok = await saveRating(meal, current.stars, text);
     if (ok) { await loadRatings(); if (text && !current.comment) onActivity(); }
@@ -598,7 +576,7 @@ export default function TodayTab({
 
   // Gericht teilen: Teilen-Menü des Handys, sonst Text kopieren
   async function share(meal) {
-    const s = totalOf(meal.name);
+    const s = totalOf(meal);
     const mensa = canteens.find((c) => c.id === canteenId)?.name || "Mensa";
     const when = date === today ? "Heute" : date === daysAgo(1) ? "Gestern"
       : `Am ${dayLabel(date, today).replace(" · ", ", ")}`;
@@ -624,43 +602,6 @@ export default function TodayTab({
   const currentDay = days.find((d) => d.date === date);
   const isFuture = date > today;
   const isPast = !!date && date < today;
-
-  // Umbenannte Gerichte erkennen: Ein Name ist vom Plan verschwunden und ein fast
-  // gleicher Name derselben Kategorie ist erst später dazugekommen
-  // („Quarkkeulchen mit Apfelmus" → „sächsische Quarkkeulchen mit Apfelmus").
-  // Standen beide gleichzeitig auf dem Plan, sind es zwei verschiedene Gerichte.
-  const renames = useMemo(() => {
-    const out = {}; // dishName(alter Name) -> { from, to }
-    if (isFuture || !currentDay) return out;
-    const plan = currentDay.meals || [];
-    const planKeys = new Set(plan.map((m) => dishName(m.name)));
-    const seenAt = {};
-    for (const r of archive || []) seenAt[dishName(r.meal_name)] ??= Date.parse(r.first_seen);
-    for (const r of archive || []) {
-      const k = dishName(r.meal_name);
-      if (planKeys.has(k) || out[k]) continue;
-      const to = plan.find((m) => (m.category || "") === (r.category || "") && sameDish(m.name, r.meal_name)
-        && !(seenAt[dishName(m.name)] <= seenAt[k] + 60000));
-      if (to) out[k] = { from: r.meal_name, to: to.name };
-    }
-    return out;
-  }, [currentDay, archive, isFuture]);
-  // alle Schreibweisen eines Gerichts (der aktuelle Name zuerst)
-  function variants(name) {
-    const k = dishName(name);
-    return [k, ...Object.keys(renames).filter((o) => dishName(renames[o].to) === k)];
-  }
-
-  // Umbenennung auch in der Datenbank festhalten: Bewertungen wandern zum neuen
-  // Namen (Supabase prüft selbst noch einmal, siehe SQL 16). Danach neu laden.
-  const mergedRef = useRef(new Set());
-  useEffect(() => {
-    const todo = Object.values(renames).filter((r) => !mergedRef.current.has(`${canteenId}|${date}|${r.from}`));
-    if (todo.length === 0) return;
-    todo.forEach((r) => mergedRef.current.add(`${canteenId}|${date}|${r.from}`));
-    Promise.all(todo.map((r) => supabase.rpc("merge_dish_rename", { p_canteen: canteenId, p_date: date, p_old: r.from, p_new: r.to })))
-      .then((res) => { if (res.some((x) => !x.error && x.data > 0)) loadRatings(); });
-  }, [renames]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Tag-Auswahl so scrollen, dass "Heute" ganz links steht. Der letzte
   // Mensatag (zum Nachbewerten) liegt links daneben und erscheint erst,
@@ -694,58 +635,30 @@ export default function TodayTab({
   const dayChipLabel = (d) => (d === daysAgo(1) ? `Gestern · ${shortDate(d)}` : dayLabel(d, today));
   const dayLoading = loading;
 
+  const isFav = (m) => [m.name, ...(m.aliases || [])].find((n) => favorites.has(dishKey(canteenId, n)));
   const { mains, extras, favToday } = useMemo(() => {
-    const plan = currentDay?.meals || [];
-
-    // Heute zeigen wir alle Gerichte, die an dem Tag irgendwann auf dem
-    // Plan standen. Für Tage in der Zukunft gilt nur der aktuelle Plan.
-    let all = plan;
-    if (!isFuture) {
-      const list = plan.map((m) => ({ ...m }));
-      // gleiches Gericht in anderer Schreibweise nicht doppelt zeigen (der aktuelle
-      // Plan gewinnt) – aber Beilagen und Preise zusammenführen. Wichtig beim Wok:
-      // Ist er nicht mehr im Plan, stehen Grundpreis und Topping-Eintrag getrennt
-      // in den gemerkten Gerichten, und nur einer von beiden hat die Toppings.
-      const byKey = new Map(list.map((m) => [dishName(m.name), m]));
-      const wokTwin = (m) => /wok/i.test(m.category || "")
-        && list.find((x) => x.category === m.category && sameDish(x.name, m.name));
-      // Nicht mehr gelistete Gerichte hinter ihre Kategorie einsortieren
-      const add = (m) => {
-        const k = dishName(m.name);
-        if (renames[k]) return;
-        const twin = byKey.get(k) || wokTwin(m);
-        if (twin) { mergeMeal(twin, m); return; }
-        byKey.set(k, m);
-        let i = -1;
-        list.forEach((x, idx) => { if (x.category === m.category) i = idx; });
-        if (i >= 0) list.splice(i + 1, 0, m);
-        else list.push(m);
-      };
-      (archive || []).filter((r) => !isPastaExtra(r.category, r.meal_name) && !isPlaceholderMeal(r.meal_name)).forEach((r) => add(archivedMeal(r)));
-      Object.values(ratedMeals).filter((r) => !isPlaceholderMeal(r.meal_name)).forEach((r) =>
-        add(archivedMeal({ meal_name: r.meal_name, category: r.category, price: r.price })));
-      all = list;
-    }
-
+    // Die Liste kommt fertig vom Server: ohne doppelte Gerichte, und heute samt
+    // allem, was an dem Tag schon einmal auf dem Plan stand.
+    const all = currentDay?.meals || [];
     const filtered = all.filter((m) => matchesDiet(m, dietFilter));
     // Standard: erst Fleisch/Fisch, dann vegan/vegetarisch, dann Pasta, dann der Rest
     const sorted = sortByRating
-      ? [...filtered].sort((a, b) => byTotal(totalOf(a.name), totalOf(b.name)))
+      ? [...filtered].sort((a, b) => byTotal(totalOf(a), totalOf(b)))
       : [...filtered].sort((a, b) => mealGroup(a) - mealGroup(b));
 
     return {
       mains: sorted.filter((m) => m.isMain),
       extras: sorted.filter((m) => !m.isMain),
-      favToday: all.filter((m) => favorites.has(dishKey(canteenId, m.name))),
+      favToday: all.filter(isFav),
     };
-  }, [currentDay, archive, ratedMeals, isFuture, dietFilter, sortByRating, totals, favorites, canteenId, renames]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [currentDay, dietFilter, sortByRating, totals, favorites, canteenId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Tagessieger: Hauptgericht mit der besten Gesamtbewertung. Gerichte mit
   // mindestens 2 Stimmen gehen vor, damit nicht eine einzelne 5 gewinnt.
   const winner = mains
-    .filter((m) => totalOf(m.name)?.votes > 0)
-    .sort((a, b) => byTotal(totalOf(a.name), totalOf(b.name)))[0];
-  const winnerTotal = winner && totalOf(winner.name);
+    .filter((m) => totalOf(m)?.votes > 0)
+    .sort((a, b) => byTotal(totalOf(a), totalOf(b)))[0];
+  const winnerTotal = winner && totalOf(winner);
 
   function jumpTo(name) {
     const el = [...document.querySelectorAll("article[data-meal]")].find((a) => a.dataset.meal === name);
@@ -754,11 +667,11 @@ export default function TodayTab({
 
   const cardProps = (m, compact = false) => ({
     meal: m,
-    stats: mergeStats(variants(m.name).map((k) => stats[k])),
-    total: totalOf(m.name),
-    mine: mineOf(m.name),
-    dishes: variants(m.name),
-    isFavorite: favorites.has(dishKey(canteenId, m.name)),
+    stats: mergeStats(keysOf(m).map((k) => stats[k])),
+    total: totalOf(m),
+    mine: mineOf(m),
+    dishes: keysOf(m),
+    isFavorite: !!isFav(m),
     canRate: !!userId,
     isFuture,
     onRate: rate,
@@ -766,9 +679,10 @@ export default function TodayTab({
     onRemove: removeRating,
     onVariant: changeVariant,
     onShare: share,
-    friendRatings: variants(m.name).flatMap((k) => friendsByDish[k] || []),
+    // je Freund nur die neueste Bewertung (auch wenn das Gericht früher anders hieß)
+    friendRatings: Object.values(Object.fromEntries(keysOf(m).flatMap((k) => friendsByDish[k] || []).sort((a, b) => (a.date < b.date ? -1 : 1)).map((f) => [f.name, f]))),
     thread: { userId, username, friends, needLogin, showToast, noTextLimit },
-    onFavorite: (meal) => onToggleFavorite(canteenId, meal.name),
+    onFavorite: (meal) => onToggleFavorite(canteenId, isFav(meal) || meal.name),
     needLogin,
     canteenId,
     date,
@@ -855,8 +769,23 @@ export default function TodayTab({
           </button>
         )}
 
+        {stale?.failed && (
+          <div style={styles.notice} role="status">
+            📡 Keine Verbindung – du siehst den Stand von {standText(stale.at, today)}. Die App versucht es von selbst wieder.
+          </div>
+        )}
+        {!stale?.failed && planSource === "archiv" && !dayLoading && !error && date <= today && (
+          <div style={styles.notice} role="status">
+            Der Speiseplan-Dienst ist gerade nicht erreichbar. Du siehst die Gerichte, die Schmausi sich für heute gemerkt hat.
+          </div>
+        )}
         {dayLoading && !error && !nothingAtAll && <div style={styles.notice}>Speiseplan wird geladen…</div>}
-        {error && <div style={{ ...styles.notice, ...styles.noticeError }}>{error} Versuch es gleich noch einmal.</div>}
+        {error && (
+          <div style={{ ...styles.notice, ...styles.noticeError }}>
+            {error}{" "}
+            <button type="button" onClick={() => setAttempt((a) => a + 1)} style={{ ...styles.smallAction, display: "inline" }}>Nochmal versuchen</button>
+          </div>
+        )}
 
         {nothingAtAll && (
           <div style={styles.empty}>

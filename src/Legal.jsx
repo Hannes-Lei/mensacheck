@@ -85,6 +85,7 @@ const PAGES = {
         <H>5. Dienstleister</H>
         <UL items={[
           "Supabase Inc. (Datenbank, Anmeldung, Profilbilder): Die Daten liegen auf Servern in Frankfurt am Main (EU).",
+          "Google (Gmail): Darüber wird die E-Mail zum Zurücksetzen des Passworts verschickt. Dafür wird deine E-Mail-Adresse an Google übermittelt.",
           "Vercel Inc. (Hosting der App): Sitz in den USA. Die Übermittlung ist über das EU-US Data Privacy Framework bzw. EU-Standardvertragsklauseln abgesichert.",
           "OpenMensa (Speisepläne): Unser Server fragt die Speisepläne ab. Dabei werden keine Daten von dir übertragen.",
           "Push-Dienst deines Geräts (nur wenn du Benachrichtigungen einschaltest): je nach Gerät Apple, Google oder Mozilla. Er stellt die Nachricht zu; der Inhalt ist dabei verschlüsselt.",
@@ -239,7 +240,7 @@ export function AccountSheet({ userId, username, onClose, onDeleted, showToast, 
     if (taken?.length) { setBusy(false); return setError("Den Namen gibt es schon. Probier einen anderen."); }
     const { error: err } = await supabase.from("profiles").update({ username: name }).eq("id", userId);
     setBusy(false);
-    if (err) return setError(err.code === "23505" ? "Den Namen gibt es schon. Probier einen anderen." : friendlyError(err));
+    if (err) return setError(err.code === "23505" ? "Den Namen gibt es schon. Probier einen anderen." : err.code === "23514" ? "Dieser Name geht leider nicht." : friendlyError(err));
     onUsernameChange(name);
     setStep("overview");
     showToast("Nutzername geändert.");

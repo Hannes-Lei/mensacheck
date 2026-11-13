@@ -70,16 +70,14 @@ export default function RankingTab({ canteens, canteenId, active }) {
       });
 
     // Wok: Bewertungen nach Topping getrennt zählen (kein Topping gewählt = ohne)
-    let q = supabase.from("ratings").select("canteen_id, dish, variant, stars").ilike("category", "%wok%").limit(5000);
-    if (p.since()) q = q.gte("meal_date", p.since());
-    if (scope !== "all") q = q.eq("canteen_id", scope);
-    q.then(({ data }) => {
+    // (die Datenbank zählt je Topping zusammen – Funktion wok_variant_stats)
+    supabase.rpc("wok_variant_stats", { p_since: p.since(), p_canteen: scope === "all" ? null : scope }).then(({ data }) => {
       if (cancelled) return;
       const out = {};
       for (const r of data || []) {
         const kind = !r.variant || r.variant === NO_TOPPING ? "ohne" : variantIsVeg(r.variant) ? "veg" : "meat";
         const g = ((out[`${r.canteen_id}|${r.dish}`] ||= {})[kind] ||= { sum: 0, n: 0 });
-        g.sum += Number(r.stars); g.n++;
+        g.sum += Number(r.total); g.n += Number(r.votes);
       }
       setByVariant(out);
     });

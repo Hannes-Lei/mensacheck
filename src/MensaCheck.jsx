@@ -3,6 +3,7 @@ import { supabase } from "./supabase.js";
 import { dishKey, friendlyError, BADGES, computeStats } from "./helpers.js";
 import { styles, globalCss, C, Avatar } from "./ui.jsx";
 import AuthSheet, { NewPasswordSheet } from "./AuthSheet.jsx";
+import ErrorBoundary from "./ErrorBoundary.jsx";
 import TodayTab from "./TodayTab.jsx";
 import RankingTab from "./RankingTab.jsx";
 import ProfileTab from "./ProfileTab.jsx";
@@ -333,63 +334,71 @@ export default function MensaCheck() {
       {/* Alle Ansichten bleiben geladen, damit Auswahl und Filter erhalten bleiben */}
       <div style={{ display: tab === "today" ? "block" : "none" }}>
         <WrappedBanner userId={userId} active={tab === "today"} onOpen={(kind) => { setTab("me"); window.scrollTo({ top: 0 }); setOpenWrapped((o) => ({ kind, n: (o?.n || 0) + 1 })); }} />
-        <TodayTab
-          canteens={canteens}
-          canteenId={canteenId}
-          onCanteenChange={changeCanteen}
-          userId={userId}
-          username={username}
-          friends={friends}
-          avatars={avatars}
-          favorites={favorites}
-          onToggleFavorite={toggleFavorite}
-          needLogin={() => setShowAuth(true)}
-          showToast={showToast}
-          onActivity={() => checkBadges(false)}
-          active={tab === "today"}
-          noTextLimit={noTextLimit}
-        />
+        <ErrorBoundary>
+          <TodayTab
+            canteens={canteens}
+            canteenId={canteenId}
+            onCanteenChange={changeCanteen}
+            userId={userId}
+            username={username}
+            friends={friends}
+            avatars={avatars}
+            favorites={favorites}
+            onToggleFavorite={toggleFavorite}
+            needLogin={() => setShowAuth(true)}
+            showToast={showToast}
+            onActivity={() => checkBadges(false)}
+            active={tab === "today"}
+            noTextLimit={noTextLimit}
+          />
+        </ErrorBoundary>
       </div>
       <div style={{ display: tab === "friends" ? "block" : "none" }}>
-        <FriendsTab
-          userId={userId}
-          username={username}
-          groups={groups}
-          members={members}
-          reloadGroups={reloadGroups}
-          canteens={canteens}
-          needLogin={() => setShowAuth(true)}
-          showToast={showToast}
-          active={tab === "friends"}
-          noTextLimit={noTextLimit}
-          checkins={checkins}
-          reloadSeats={reloadSeats}
-          homeCanteen={canteenId}
-        />
+        <ErrorBoundary>
+          <FriendsTab
+            userId={userId}
+            username={username}
+            groups={groups}
+            members={members}
+            reloadGroups={reloadGroups}
+            canteens={canteens}
+            needLogin={() => setShowAuth(true)}
+            showToast={showToast}
+            active={tab === "friends"}
+            noTextLimit={noTextLimit}
+            checkins={checkins}
+            reloadSeats={reloadSeats}
+            homeCanteen={canteenId}
+          />
+        </ErrorBoundary>
       </div>
       <div style={{ display: tab === "ranking" ? "block" : "none" }}>
-        <RankingTab canteens={canteens} canteenId={canteenId} active={tab === "ranking"} />
+        <ErrorBoundary>
+          <RankingTab canteens={canteens} canteenId={canteenId} active={tab === "ranking"} />
+        </ErrorBoundary>
       </div>
       <div style={{ display: tab === "me" ? "block" : "none" }}>
-        <ProfileTab
-          userId={userId}
-          username={username}
-          canteens={canteens}
-          favoritesList={favoritesList}
-          onToggleFavorite={toggleFavorite}
-          needLogin={() => setShowAuth(true)}
-          onSignOut={async () => { await pushSignOut(); supabase.auth.signOut(); setTab("today"); }}
-          friends={friends}
-          onDeleted={() => { setTab("today"); window.scrollTo({ top: 0 }); showToast("Dein Konto wurde gelöscht. Mach's gut! 👋"); }}
-          theme={theme}
-          onThemeChange={setTheme}
-          active={tab === "me"}
-          avatarPath={avatarPath}
-          onAvatarChange={(p) => { setAvatarPath(p); reloadGroups(); }}
-          onUsernameChange={(n) => { setUsername(n); reloadGroups(); }}
-          openWrapped={openWrapped}
-          showToast={showToast}
-        />
+        <ErrorBoundary>
+          <ProfileTab
+            userId={userId}
+            username={username}
+            canteens={canteens}
+            favoritesList={favoritesList}
+            onToggleFavorite={toggleFavorite}
+            needLogin={() => setShowAuth(true)}
+            onSignOut={async () => { await pushSignOut(); supabase.auth.signOut(); setTab("today"); }}
+            friends={friends}
+            onDeleted={() => { setTab("today"); window.scrollTo({ top: 0 }); showToast("Dein Konto wurde gelöscht. Mach's gut! 👋"); }}
+            theme={theme}
+            onThemeChange={setTheme}
+            active={tab === "me"}
+            avatarPath={avatarPath}
+            onAvatarChange={(p) => { setAvatarPath(p); reloadGroups(); }}
+            onUsernameChange={(n) => { setUsername(n); reloadGroups(); }}
+            openWrapped={openWrapped}
+            showToast={showToast}
+          />
+        </ErrorBoundary>
       </div>
 
       <footer style={styles.footer}>

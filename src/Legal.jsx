@@ -12,7 +12,7 @@ export const LEGAL = {
   name: "Hannes",
   street: "",   // z.B. "Musterstraße 1"   – leer = wird nicht angezeigt
   city: "",     // z.B. "04103 Leipzig"
-  email: "",    // z.B. "kontakt@…"
+  email: "schmausi.app@gmail.com",
   updated: "November 2026",
 };
 

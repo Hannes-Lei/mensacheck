@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { supabase } from "./supabase.js";
 import { BADGES, computeStats, dishKey, formatAvg, formatDate, friendlyError, variantIcon, variantLabel, NO_TOPPING } from "./helpers.js";
-import { StarLine, Chip, Avatar, styles, C } from "./ui.jsx";
+import { StarLine, Chip, Avatar, formatStars, styles, C } from "./ui.jsx";
 import Moderation from "./Moderation.jsx";
 import { AccountSheet } from "./Legal.jsx";
 import { WrappedCard } from "./Wrapped.jsx";
@@ -116,7 +116,11 @@ function RatingRow({ r, canteenName, onRemove }) {
         {r.comment && <div style={{ fontSize: 13, color: C.soft, marginTop: 6, lineHeight: 1.4 }}>„{r.comment}"</div>}
       </div>
       <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
-        <StarLine value={r.stars} size={14} />
+        {/* Sterne + genaue Zahl, z.B. „★★★★☆ 4,0" */}
+        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <StarLine value={r.stars} size={14} />
+          <span style={{ fontSize: 13, fontWeight: 800, color: C.text }}>{formatStars(r.stars)}</span>
+        </div>
         {onRemove && (
           <button
             type="button" onClick={() => onRemove(r)}
@@ -133,11 +137,23 @@ function RatingRow({ r, canteenName, onRemove }) {
 
 // Alle eigenen Bewertungen bzw. nur die mit Kommentar – eigenes Vollbild-Fenster, nach Monaten gruppiert
 const MONTH_NAMES = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
+// Sortierung: neueste zuerst (nach Monaten), beste oder schlechteste zuerst
+const SORTS = [
+  { id: "date", label: "📅 Neueste" },
+  { id: "best", label: "⭐ Beste" },
+  { id: "worst", label: "🙈 Schlechteste" },
+];
+const byDate = (a, b) => (b.meal_date || "").localeCompare(a.meal_date || "") || (b.id || 0) - (a.id || 0);
 function MyRatingsSheet({ ratings, initial, canteenName, onRemove, onClose }) {
   const [filter, setFilter] = useState(initial);
-  const list = filter === "comments" ? ratings.filter((r) => r.comment) : ratings;
+  const [sort, setSort] = useState("date");
+  const base = filter === "comments" ? ratings.filter((r) => r.comment) : ratings;
+  const list = [...base].sort((a, b) =>
+    sort === "best" ? b.stars - a.stars || byDate(a, b)
+      : sort === "worst" ? a.stars - b.stars || byDate(a, b)
+        : byDate(a, b));
   const months = [];
-  for (const r of list) {
+  for (const r of sort === "date" ? list : []) {
     const key = r.meal_date.slice(0, 7);
     if (!months.length || months[months.length - 1].key !== key) months.push({ key, items: [] });
     months[months.length - 1].items.push(r);
@@ -155,6 +171,11 @@ function MyRatingsSheet({ ratings, initial, canteenName, onRemove, onClose }) {
           <Chip active={filter === "all"} onClick={() => setFilter("all")}>Alle · {ratings.length}</Chip>
           <Chip active={filter === "comments"} onClick={() => setFilter("comments")}>Mit Kommentar · {ratings.filter((r) => r.comment).length}</Chip>
         </div>
+        <div style={{ ...styles.chipRow, margin: "2px 0 4px" }} role="group" aria-label="Sortieren">
+          {SORTS.map((o) => <Chip key={o.id} active={sort === o.id} onClick={() => setSort(o.id)}>{o.label}</Chip>)}
+        </div>
+        {/* Nach Sternen sortiert: eine durchgehende Liste ohne Monate */}
+        {sort !== "date" && <div style={{ marginTop: 12 }}>{list.map((r) => <RatingRow key={r.id} r={r} canteenName={canteenName} onRemove={onRemove} />)}</div>}
         {months.map((m) => (
           <div key={m.key}>
             <h3 style={{ ...styles.h3, fontSize: 15, margin: "16px 0 6px" }}>{label(m.key)} · {m.items.length}</h3>

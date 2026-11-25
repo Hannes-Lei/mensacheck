@@ -374,7 +374,11 @@ export default function MensaCheck() {
       </div>
       <div style={{ display: tab === "ranking" ? "block" : "none" }}>
         <ErrorBoundary>
-          <RankingTab canteens={canteens} canteenId={canteenId} active={tab === "ranking"} />
+          <RankingTab
+            canteens={canteens} canteenId={canteenId} active={tab === "ranking"}
+            userId={userId} username={username} friends={friends}
+            needLogin={() => setShowAuth(true)} showToast={showToast} noTextLimit={noTextLimit}
+          />
         </ErrorBoundary>
       </div>
       <div style={{ display: tab === "me" ? "block" : "none" }}>

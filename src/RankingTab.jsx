@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { supabase } from "./supabase.js";
-import { daysAgo, formatAvg, formatDate, dishName, variantIsVeg, NO_TOPPING } from "./helpers.js";
+import { daysAgo, formatAvg, formatDate, shortDate, dishName, variantIsVeg, NO_TOPPING } from "./helpers.js";
 import { Chip, StarLine, styles, C } from "./ui.jsx";
+import { CommentItem, THREAD_SELECT } from "./Interactions.jsx";
 
 // ============================================================================
 // Ansicht "Rangliste": beste und schlechteste Gerichte
@@ -39,7 +40,40 @@ const mensaTag = {
   background: C.hintBg, color: C.hintText, whiteSpace: "nowrap",
 };
 
-export default function RankingTab({ canteens, canteenId, active }) {
+// Kommentare zu einem Gericht der Rangliste (aus dem gewählten Zeitraum)
+function RankComments({ canteenId, mealName, since, ...thread }) {
+  const [items, setItems] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    let q = supabase
+      .from("ratings")
+      .select(THREAD_SELECT)
+      .eq("canteen_id", canteenId)
+      .eq("dish", dishName(mealName))
+      .not("comment", "is", null)
+      .neq("comment", "");
+    if (since) q = q.gte("meal_date", since);
+    q.order("created_at", { ascending: false }).limit(30).then(({ data, error }) => {
+      if (cancelled) return;
+      if (error) console.warn("Kommentare:", error.message);
+      setItems(error ? "fehler" : data || []);
+    });
+    return () => { cancelled = true; };
+  }, [canteenId, mealName, since]);
+
+  let content;
+  if (items === null) content = <p style={styles.mutedText}>Kommentare werden geladen…</p>;
+  else if (items === "fehler") content = <p style={styles.mutedText}>Kommentare konnten nicht geladen werden.</p>;
+  else if (items.length === 0) content = <p style={styles.mutedText}>Noch keine Kommentare{since ? " in diesem Zeitraum" : ""}.</p>;
+  else content = (
+    <ul style={styles.commentList}>
+      {items.map((c) => <CommentItem key={c.id} item={c} {...thread} dayNote={`am ${shortDate(c.meal_date)}`} />)}
+    </ul>
+  );
+  return <div style={{ marginTop: 10, paddingTop: 8, borderTop: `1px solid ${C.line}` }}>{content}</div>;
+}
+
+export default function RankingTab({ canteens, canteenId, active, userId, username, friends, needLogin, showToast, noTextLimit = false }) {
   const [period, setPeriod] = useState("week");
   const [scope, setScope] = useState("all"); // "all" oder Mensa-Nummer
   const [mode, setMode] = useState("top"); // top | flop
@@ -47,9 +81,10 @@ export default function RankingTab({ canteens, canteenId, active }) {
   const [byVariant, setByVariant] = useState({}); // Wok: Schnitt je Auswahl (ohne / Fleisch / veggie)
   const [error, setError] = useState(null);
   const [showAll, setShowAll] = useState(false);
+  const [open, setOpen] = useState(null); // Gericht, dessen Kommentare gerade offen sind
 
-  // Bei anderer Auswahl wieder mit den ersten 25 anfangen
-  useEffect(() => { setShowAll(false); }, [period, scope, mode]);
+  // Bei anderer Auswahl wieder mit den ersten 25 anfangen und Kommentare zuklappen
+  useEffect(() => { setShowAll(false); setOpen(null); }, [period, scope, mode]);
 
   useEffect(() => {
     if (!active) return;
@@ -136,8 +171,19 @@ export default function RankingTab({ canteens, canteenId, active }) {
           </div>
         )}
 
-        {visible.map((r, i) => (
-          <div key={`${r.canteen_id}|${r.meal_name}`} style={styles.rankRow}>
+        {visible.map((r, i) => {
+          const key = `${r.canteen_id}|${r.meal_name}`;
+          const isOpen = open === key;
+          const toggle = () => setOpen(isOpen ? null : key);
+          return (
+          <div key={key} style={{ ...styles.rankRow, display: "block" }}>
+            {/* Antippen: Kommentare auf- bzw. zuklappen (ein anderes Gericht klappt das alte zu) */}
+            <div
+              role="button" tabIndex={0} aria-expanded={isOpen}
+              onClick={toggle}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } }}
+              style={{ display: "flex", alignItems: "center", gap: 12, cursor: "pointer" }}
+            >
             <div style={styles.rankNo}>{mode === "top" && i < 3 ? MEDALS[i] : i + 1}</div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={styles.rankName}>{r.meal_name}</div>
@@ -153,9 +199,18 @@ export default function RankingTab({ canteens, canteenId, active }) {
               <div style={{ fontSize: 18, fontWeight: 800 }}>{formatAvg(r.avg_stars)}</div>
               <StarLine value={r.avg_stars} size={11} />
               <div style={{ fontSize: 11, color: C.muted }}>{r.votes} Stimmen</div>
+              <div style={{ fontSize: 11, color: C.faint, marginTop: 2 }}>💬 {isOpen ? "▴" : "▾"}</div>
             </div>
+            </div>
+            {isOpen && (
+              <RankComments
+                canteenId={r.canteen_id} mealName={r.meal_name} since={PERIODS.find((p) => p.id === period).since()}
+                userId={userId} username={username} friends={friends} needLogin={needLogin} showToast={showToast} noTextLimit={noTextLimit}
+              />
+            )}
           </div>
-        ))}
+          );
+        })}
 
         {!showAll && list.length > SHOW && (
           <button type="button" style={styles.extrasToggle} onClick={() => setShowAll(true)}>

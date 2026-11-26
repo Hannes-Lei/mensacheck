@@ -17,7 +17,49 @@ const DAYS = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freita
 const iso = (y, m, d) => `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
 const lastDay = (y, m) => new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
 
-// Zeiträume: der letzte abgeschlossene und der laufende
+// ---- Wann erscheint das Monats-Wrapped? ---------------------------------------
+// Schon am VORLETZTEN Mensatag des Monats (Hannes, 26.11.) – so bleibt Zeit, sich
+// mit Freunden auszutauschen, bevor Wochenende oder Ferien dazwischenkommen.
+// Wer am letzten Mensatag noch isst, dem wird das automatisch ergänzt.
+// Mensatag = Montag–Freitag, kein Feiertag in Sachsen, keine Mensa-Pause.
+// Mensa-Pausen (z.B. Weihnachten) von–bis, bei Bedarf jedes Jahr ergänzen:
+const MENSA_PAUSEN = [
+  ["2026-12-19", "2027-01-03"],
+];
+// Feiertage in Sachsen (Ostern wird ausgerechnet)
+function easter(y) {
+  const a = y % 19, b = Math.floor(y / 100), c = y % 100, d = Math.floor(b / 4), e = b % 4;
+  const f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31), day = ((h + l - 7 * m + 114) % 31) + 1;
+  return Date.UTC(y, month - 1, day);
+}
+const holidayCache = {};
+function holidays(y) {
+  if (holidayCache[y]) return holidayCache[y];
+  const day = (t) => new Date(t).toISOString().slice(0, 10);
+  const e = easter(y), D = 86400000;
+  const nov22 = new Date(Date.UTC(y, 10, 22));
+  const bussUndBettag = Date.UTC(y, 10, 22 - ((nov22.getUTCDay() + 4) % 7)); // Mittwoch vor dem 23.11.
+  return (holidayCache[y] = new Set([
+    iso(y, 0, 1), day(e - 2 * D), day(e + D), iso(y, 4, 1), day(e + 39 * D), day(e + 50 * D),
+    iso(y, 9, 3), iso(y, 9, 31), day(bussUndBettag), iso(y, 11, 24), iso(y, 11, 25), iso(y, 11, 26), iso(y, 11, 31),
+  ]));
+}
+export function isMensaDay(d) {
+  const wd = new Date(d + "T12:00:00Z").getUTCDay();
+  if (wd === 0 || wd === 6) return false;
+  if (holidays(Number(d.slice(0, 4))).has(d)) return false;
+  return !MENSA_PAUSEN.some(([from, to]) => d >= from && d <= to);
+}
+// Erscheinungstag für Monat m (0 = Januar): vorletzter Mensatag, sonst letzter Tag
+export function wrappedReleaseDay(y, m) {
+  const days = [];
+  for (let d = 1; d <= lastDay(y, m); d++) if (isMensaDay(iso(y, m, d))) days.push(iso(y, m, d));
+  return days.length >= 2 ? days[days.length - 2] : days[0] || iso(y, m, lastDay(y, m));
+}
+
+// Zeiträume: der Monat, dessen Wrapped gerade gilt, und der laufende
 export function wrappedPeriods(today = todayBerlin()) {
   const [y, mo] = today.split("-").map(Number); const m = mo - 1;
   if (WRAPPED_MODE === "semester") {
@@ -30,8 +72,11 @@ export function wrappedPeriods(today = todayBerlin()) {
     return { done: prev, current: cur };
   }
   const pm = m === 0 ? 11 : m - 1, py = m === 0 ? y - 1 : y;
+  const month = (yy, mm) => ({ key: `${yy}-${mm}`, label: MONTHS[mm], short: "Monat", start: iso(yy, mm, 1), end: iso(yy, mm, lastDay(yy, mm)) });
+  // Ab dem Erscheinungstag gilt schon der laufende Monat (bis Monatsende wird ergänzt)
+  const early = today >= wrappedReleaseDay(y, m);
   return {
-    done: { key: `${py}-${pm}`, label: MONTHS[pm], short: "Monat", start: iso(py, pm, 1), end: iso(py, pm, lastDay(py, pm)) },
+    done: early ? { ...month(y, m), early: true } : month(py, pm),
     current: { key: `${y}-${m}`, label: MONTHS[m], short: "Monat", start: iso(y, m, 1), end: today, running: true },
   };
 }
@@ -248,6 +293,9 @@ export function WrappedCard({ ratings, userId, friends, canteenName, openRequest
           Dein {main.label}
         </div>
         <div style={{ fontSize: 14, opacity: 0.95 }}>{mainN} {mainN === 1 ? "Gericht" : "Gerichte"} · Tippe für deinen Rückblick →</div>
+        {main.early && todayBerlin() < main.end && (
+          <div style={{ fontSize: 12, opacity: 0.85, marginTop: 4 }}>Wird bis Monatsende automatisch ergänzt.</div>
+        )}
       </button>}
       {open && <WrappedStory period={open} ratings={ratings} userId={userId} friends={friends} canteenName={canteenName} onClose={() => setOpen(null)} />}
     </>
@@ -283,6 +331,9 @@ function WrappedStory({ period, ratings, userId, friends, canteenName, onClose }
       <div style={{ fontSize: 64 }}>🍽️</div>
       <div style={{ ...big, fontSize: 40 }}>Dein {when}<br />bei Schmausi</div>
       <div style={{ fontSize: 17, opacity: 0.9 }}>Schauen wir mal, was du so gegessen hast …</div>
+      {period.early && todayBerlin() < period.end && (
+        <div style={{ fontSize: 13, opacity: 0.85, marginTop: 6 }}>Was du bis Monatsende noch bewertest, kommt automatisch dazu.</div>
+      )}
     </> },
     { bg: C.cobalt, fg: "#fff", body: <>
       <div style={{ fontSize: 17, opacity: 0.9 }}>Du hast</div>

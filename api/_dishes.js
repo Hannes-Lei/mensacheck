@@ -301,6 +301,71 @@ export function cleanMeal(meal) {
   };
 }
 
+// ---- Wok-Toppings erkennen ---------------------------------------------------
+// So steht der Wok bei OpenMensa (Hannes, 26.11.): ein günstiger Eintrag (ohne
+// Topping, immer vegetarisch) und ein oder zwei teurere (mit Topping). Beim
+// teureren stehen Topping UND die normalen Beilagen (Soße, Reis …) zusammen.
+// Topping ist deshalb nur, was beim teureren Eintrag ZUSÄTZLICH steht – und
+// nie Soße, Reis, Nudeln & Co. Oft gibt es nur ein Topping (z.B. nur Fleisch).
+const NOT_TOPPING = /soße|sosse|sauce|dip\b|dressing|reis|nudel|noodle|udon|ramen|salat|brot|baguette|kartoffel|pommes|couscous|bulgur|quinoa/i;
+const PROTEIN = /tofu|falafel|tempeh|seitan|halloumi|paneer|soja|ei\b|eier|nuggets|bällchen|baellchen|frikadell|streifen|filet|würfel|wuerfel/i;
+const isToppingText = (t) => !!nameMeat(t) || PROTEIN.test(t) || !NOT_TOPPING.test(t);
+const sideKey = (t) => dishKey(toppingLabel(t));
+// Was steht im Namen des teureren Eintrags zusätzlich? („Gemüsepfanne mit Hähnchen“ → „mit Hähnchen“)
+function nameExtra(name, baseNames) {
+  const n = tidy(name);
+  for (const b of baseNames) {
+    const i = n.toLowerCase().indexOf(tidy(b).toLowerCase());
+    if (i < 0 || !b) continue;
+    const rest = (n.slice(0, i) + " " + n.slice(i + tidy(b).length)).replace(/^[\s,;:+&-]+|[\s,;:+&-]+$/g, "").replace(/\s+/g, " ");
+    if (rest.length >= 3) return /^(mit|und|dazu)\b/i.test(rest) ? rest : `mit ${rest}`;
+  }
+  return null;
+}
+// Ergebnis: { toppings, sides, topMax }
+function wokToppings(pool, basePrice) {
+  const priced = pool.filter((e) => e.price != null);
+  const base = basePrice == null ? pool : priced.filter((e) => Number(e.price) === basePrice);
+  const pricier = basePrice == null ? [] : priced.filter((e) => Number(e.price) > basePrice);
+  const baseSides = uniqueByKey(base.flatMap((e) => e.sides || []));
+  const baseKeys = new Set(baseSides.map(sideKey));
+  // Beilagen, die bei ALLEN teureren Einträgen stehen, sind kein Topping (wenn es mehrere gibt)
+  const common = pricier.length >= 2
+    ? new Set(pricier.map((e) => new Set((e.sides || []).map(sideKey))).reduce((a, b) => new Set([...a].filter((k) => b.has(k)))))
+    : new Set();
+  let toppings = [];
+  for (const e of pricier) {
+    let own = (e.sides || []).filter((x) => !baseKeys.has(sideKey(x)) && !common.has(sideKey(x)) && isToppingText(x));
+    if (!own.length) {
+      const extra = nameExtra(e.name, base.map((b) => b.name));
+      if (extra) own = [extra];
+    }
+    if (!own.length) {
+      // nichts erkennbar: Art des Toppings aus der Kategorie (z.B. „Wok – mit Fleisch/Fisch“)
+      const cat = (e.category || "").toLowerCase();
+      own = [/fleisch|fisch/.test(cat) ? "mit Fleisch/Fisch" : /vegan|vegetar|veggie/.test(cat) ? "veggie Topping (vegetarisch)" : "mit Topping"];
+    }
+    toppings.push(...own);
+  }
+  // Toppings, die schon gespeichert waren (der teurere Eintrag steht nicht mehr auf dem Plan)
+  toppings.push(...pool.flatMap((e) => (e.toppings || []).map((t) => (typeof t === "string" ? t : t.name))));
+  toppings = uniqueByKey(toppings.filter(isToppingText));
+  let topMax = pricier.length ? Math.max(...pricier.map((e) => Number(e.price))) : null;
+  if (!toppings.length) {
+    toppings = uniqueByKey(pool.flatMap((e) => e.storedToppings || []).filter(isToppingText));
+    const old = pool.map((e) => e.storedToppingPrice ?? e.toppingPrice).filter((p) => p != null).map(Number);
+    if (toppings.length && old.length) topMax = Math.max(...old);
+  } else if (topMax == null) {
+    const old = pool.map((e) => e.toppingPrice ?? e.storedToppingPrice).filter((p) => p != null).map(Number);
+    if (old.length) topMax = Math.max(...old);
+  }
+  const topKeys = new Set(toppings.map(sideKey));
+  // Beilagen: die vom günstigen Eintrag, sonst die normalen Beilagen der teureren
+  const sides = uniqueByKey([...baseSides, ...pricier.flatMap((e) => e.sides || []).filter((x) => !isToppingText(x) || common.has(sideKey(x)))])
+    .filter((x) => !topKeys.has(sideKey(x)));
+  return { toppings, sides, topMax };
+}
+
 // Mehrere Einträge desselben Gerichts zu einem zusammenfassen. "main" gibt Namen,
 // Kategorie und Beilagen vor.
 // Wok: Es gibt ihn ohne Topping (günstiger Eintrag) und mit Topping (teurerer
@@ -318,24 +383,12 @@ function mergeGroup(pool, main) {
     isMain: main.isMain ?? true,
   };
   if (WOK.test(meal.category)) {
-    const tops = pool.map((e) => e.toppingPrice ?? e.price).filter((p) => p != null).map(Number);
-    const max = tops.length ? Math.max(...tops) : null;
-    const explicit = pool.flatMap((e) => (e.toppings || []).map((t) => (typeof t === "string" ? t : t.name)));
-    const pricier = meal.price == null ? [] : pool.filter((e) => e.price != null && Number(e.price) > meal.price);
-    let toppings = uniqueByKey([...explicit, ...pricier.flatMap((e) => e.sides || [])]);
-    let sides = uniqueByKey(pool.filter((e) => !pricier.includes(e)).flatMap((e) => e.sides || []));
-    let topMax = max;
-    if (toppings.length === 0) {
-      // Der Eintrag mit Topping steht nicht mehr auf dem Plan: die Toppings von
-      // vorhin behalten (wer mittags eins hatte, soll es noch auswählen können)
-      toppings = uniqueByKey(pool.flatMap((e) => e.storedToppings || []));
-      const old = pool.map((e) => e.storedToppingPrice).filter((p) => p != null).map(Number);
-      if (toppings.length && old.length) topMax = Math.max(...old);
-    }
-    const keys = new Set(toppings.map((t) => dishKey(toppingLabel(t))));
-    meal.sides = sides.filter((x) => !keys.has(dishKey(toppingLabel(x))));
+    const { toppings, sides, topMax } = wokToppings(pool, meal.price);
+    meal.sides = sides;
     meal.toppings = toppings;
     meal.toppingPrice = toppings.length && topMax != null && meal.price != null && topMax > meal.price ? topMax : null;
+    // „XWOK 2 - mit Fleisch/Fisch“ → „XWOK 2“ (ohne Topping ist der Wok vegetarisch)
+    meal.category = meal.category.replace(/\s*[-–:]\s*mit\s*(fleisch|fisch)\b.*$/i, "") || meal.category;
     // ohne Topping: vegan nur, wenn ein Eintrag das sagt – sonst vegetarisch
     meal.kind = pool.some((e) => e.kind === "vegan") ? "vegan" : "vegetarisch";
   }
@@ -383,6 +436,8 @@ export function buildDay(entries) {
       if (keys[i] === keys[j]) { union(i, j); continue; }
       if (a.mergedInto && dishKey(a.mergedInto) === keys[j]) { union(i, j); continue; }
       if (b.mergedInto && dishKey(b.mergedInto) === keys[i]) { union(i, j); continue; }
+      // Es gibt pro Mensa und Tag nur EINEN Wok (Hannes) – egal wie die Einträge heißen
+      if (WOK.test(a.category || "") && WOK.test(b.category || "")) { union(i, j); continue; }
       if ((a.category || "").toLowerCase() !== (b.category || "").toLowerCase()) continue;
       if (!similarName(a.name, b.name)) continue;
       if (WOK.test(a.category || "")) { union(i, j); continue; }
@@ -397,8 +452,11 @@ export function buildDay(entries) {
   const merges = [];
   for (const members of groups.values()) {
     const live = members.filter((e) => e.current);
+    const wok = WOK.test(members[0].category || "");
+    // Wok: auch Einträge, die nicht mehr auf dem Plan stehen, zählen für die
+    // Toppings (nachmittags fehlt oft der Eintrag mit Topping)
     const pool = live.length ? live : members;
-    const wok = WOK.test(pool[0].category || "");
+    const toppingPool = wok ? members : pool;
     // Welcher Name gilt?
     //  • einer, der gerade auf dem Plan steht (sonst der zuletzt dazugekommene)
     //  • bleibt möglichst der, auf den schon zusammengelegt wurde (kein Hin und Her)
@@ -406,11 +464,11 @@ export function buildDay(entries) {
     const sticky = (e) => (members.some((o) => o !== e && o.mergedInto === e.name) ? 0 : 1);
     const main = [...pool].sort((a, b) =>
       sticky(a) - sticky(b)
-      || (wok ? a.name.length - b.name.length : 0)
+      || (wok ? (a.price ?? 99) - (b.price ?? 99) || a.name.length - b.name.length : 0)
       || (live.length ? (a.order ?? 0) - (b.order ?? 0) : (b.firstSeen ?? 0) - (a.firstSeen ?? 0))
     )[0];
 
-    const meal = { id: main.id ?? `g-${dishKey(main.name)}`, ...mergeGroup(pool, main) };
+    const meal = { id: main.id ?? `g-${dishKey(main.name)}`, ...mergeGroup(toppingPool, main) };
     if (meal.toppings) meal.toppings = meal.toppings.map((t) => ({ name: t, label: toppingLabel(t), veg: toppingIsVeg(t) }));
     if (meal.toppingPrice == null) delete meal.toppingPrice;
     meal.diet = meal.kind === "vegan" || meal.kind === "vegetarisch" ? meal.kind : null;

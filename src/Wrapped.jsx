@@ -3,6 +3,7 @@ import { supabase } from "./supabase.js";
 import { formatAvg, formatDate, todayBerlin, isMeatless } from "./helpers.js";
 import { FONT_HEAD, C } from "./ui.jsx";
 import { runConfetti } from "./Celebration.jsx";
+import { MONTHS, iso, berlinNow, currentMonthWrapped } from "../api/_wrapped.js";
 
 // ============================================================================
 // Schmausi Wrapped – dein Rückblick wie bei Spotify
@@ -12,55 +13,12 @@ import { runConfetti } from "./Celebration.jsx";
 // ============================================================================
 export const WRAPPED_MODE = "month"; // "month" | "semester"
 
-const MONTHS = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
 const DAYS = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"];
-const iso = (y, m, d) => `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-const lastDay = (y, m) => new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
-
-// ---- Wann erscheint das Monats-Wrapped? ---------------------------------------
-// Schon am VORLETZTEN Mensatag des Monats (Hannes, 26.11.) – so bleibt Zeit, sich
-// mit Freunden auszutauschen, bevor Wochenende oder Ferien dazwischenkommen.
-// Wer am letzten Mensatag noch isst, dem wird das automatisch ergänzt.
-// Mensatag = Montag–Freitag, kein Feiertag in Sachsen, keine Mensa-Pause.
-// Mensa-Pausen (z.B. Weihnachten) von–bis, bei Bedarf jedes Jahr ergänzen:
-const MENSA_PAUSEN = [
-  ["2026-12-19", "2027-01-03"],
-];
-// Feiertage in Sachsen (Ostern wird ausgerechnet)
-function easter(y) {
-  const a = y % 19, b = Math.floor(y / 100), c = y % 100, d = Math.floor(b / 4), e = b % 4;
-  const f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30;
-  const i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451);
-  const month = Math.floor((h + l - 7 * m + 114) / 31), day = ((h + l - 7 * m + 114) % 31) + 1;
-  return Date.UTC(y, month - 1, day);
-}
-const holidayCache = {};
-function holidays(y) {
-  if (holidayCache[y]) return holidayCache[y];
-  const day = (t) => new Date(t).toISOString().slice(0, 10);
-  const e = easter(y), D = 86400000;
-  const nov22 = new Date(Date.UTC(y, 10, 22));
-  const bussUndBettag = Date.UTC(y, 10, 22 - ((nov22.getUTCDay() + 4) % 7)); // Mittwoch vor dem 23.11.
-  return (holidayCache[y] = new Set([
-    iso(y, 0, 1), day(e - 2 * D), day(e + D), iso(y, 4, 1), day(e + 39 * D), day(e + 50 * D),
-    iso(y, 9, 3), iso(y, 9, 31), day(bussUndBettag), iso(y, 11, 24), iso(y, 11, 25), iso(y, 11, 26), iso(y, 11, 31),
-  ]));
-}
-export function isMensaDay(d) {
-  const wd = new Date(d + "T12:00:00Z").getUTCDay();
-  if (wd === 0 || wd === 6) return false;
-  if (holidays(Number(d.slice(0, 4))).has(d)) return false;
-  return !MENSA_PAUSEN.some(([from, to]) => d >= from && d <= to);
-}
-// Erscheinungstag für Monat m (0 = Januar): vorletzter Mensatag, sonst letzter Tag
-export function wrappedReleaseDay(y, m) {
-  const days = [];
-  for (let d = 1; d <= lastDay(y, m); d++) if (isMensaDay(iso(y, m, d))) days.push(iso(y, m, d));
-  return days.length >= 2 ? days[days.length - 2] : days[0] || iso(y, m, lastDay(y, m));
-}
+// Wann das Monats-Wrapped erscheint, steht in api/_wrapped.js (gilt auch für die Push-Nachricht)
 
 // Zeiträume: der Monat, dessen Wrapped gerade gilt, und der laufende
-export function wrappedPeriods(today = todayBerlin()) {
+export function wrappedPeriods(now = berlinNow()) {
+  const today = now.date;
   const [y, mo] = today.split("-").map(Number); const m = mo - 1;
   if (WRAPPED_MODE === "semester") {
     // Wintersemester 1.10.–31.3., Sommersemester 1.4.–30.9.
@@ -71,12 +29,8 @@ export function wrappedPeriods(today = todayBerlin()) {
     const prev = m >= 9 ? sem(y, false) : m <= 2 ? sem(y - 1, false) : sem(y - 1, true);
     return { done: prev, current: cur };
   }
-  const pm = m === 0 ? 11 : m - 1, py = m === 0 ? y - 1 : y;
-  const month = (yy, mm) => ({ key: `${yy}-${mm}`, label: MONTHS[mm], short: "Monat", start: iso(yy, mm, 1), end: iso(yy, mm, lastDay(yy, mm)) });
-  // Ab dem Erscheinungstag gilt schon der laufende Monat (bis Monatsende wird ergänzt)
-  const early = today >= wrappedReleaseDay(y, m);
   return {
-    done: early ? { ...month(y, m), early: true } : month(py, pm),
+    done: currentMonthWrapped(now),
     current: { key: `${y}-${m}`, label: MONTHS[m], short: "Monat", start: iso(y, m, 1), end: today, running: true },
   };
 }
@@ -119,6 +73,16 @@ export function WrappedBanner({ userId, onOpen, active = true }) {
   const special = useMemo(() => semesterSpecial(), []);
   const month = useMemo(() => wrappedPeriods().done, []);
   const [has, setHas] = useState({ special: false, month: false });
+  // Am Erscheinungstag: Server einmal anstoßen, damit die Push-Nachricht sicher rausgeht
+  // (macht nichts, wenn sie schon verschickt ist)
+  useEffect(() => {
+    if (!month.releasedToday) return;
+    try {
+      if (sessionStorage.getItem("schmausi-wrapped-kick") === month.key) return;
+      sessionStorage.setItem("schmausi-wrapped-kick", month.key);
+    } catch { /* egal */ }
+    fetch("/api/push-wrapped", { method: "POST" }).catch(() => {});
+  }, [month]);
   const [, rerender] = useState(0);
   const [party, setParty] = useState(false);
   useEffect(() => {

@@ -84,15 +84,16 @@ export default function MensaCheck() {
     try { localStorage.setItem(THEME_KEY, theme); } catch { /* egal */ }
   }, [theme]);
 
-  // Aus einer Push-Nachricht geöffnet (?tab=me, ?mensa=63, ?sitzplan=63)
+  // Aus einer Push-Nachricht geöffnet (?tab=me, ?mensa=63, ?sitzplan=63, ?wrapped=monat)
   useEffect(() => {
     try {
       const q = new URLSearchParams(window.location.search);
       const mensa = Number(q.get("mensa"));
-      if (q.get("tab") === "me") setTab("me");
+      if (q.get("wrapped")) { setTab("me"); setOpenWrapped({ kind: "month", n: 1 }); } // „Dein Wrapped ist da!“
+      else if (q.get("tab") === "me") setTab("me");
       else if (q.get("sitzplan")) setTab("friends");
       else if (mensa) { setCanteenId(mensa); setTab("today"); }
-      if (q.has("tab") || q.has("mensa") || q.has("sitzplan")) window.history.replaceState(null, "", window.location.pathname);
+      if (q.has("tab") || q.has("mensa") || q.has("sitzplan") || q.has("wrapped")) window.history.replaceState(null, "", window.location.pathname);
     } catch { /* egal */ }
   }, []);
 

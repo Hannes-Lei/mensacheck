@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { supabase } from "./supabase.js";
 import { BADGES, computeStats, dishKey, formatAvg, formatDate, friendlyError, variantIcon, variantLabel, NO_TOPPING } from "./helpers.js";
-import { StarLine, Chip, Avatar, formatStars, styles, C } from "./ui.jsx";
+import { StarLine, Stars, Chip, Avatar, formatStars, styles, C } from "./ui.jsx";
 import Moderation from "./Moderation.jsx";
 import { AccountSheet } from "./Legal.jsx";
 import { WrappedCard } from "./Wrapped.jsx";
@@ -104,9 +104,20 @@ function DesignPicker({ theme, onThemeChange }) {
 }
 
 // Eine Zeile "Meine Bewertung"
-function RatingRow({ r, canteenName, onRemove }) {
+function RatingRow({ r, canteenName, onRemove, onChangeStars }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(r.stars);
+  const [saving, setSaving] = useState(false);
+  async function save() {
+    if (Number(draft) === Number(r.stars)) { setEditing(false); return; }
+    setSaving(true);
+    const ok = await onChangeStars(r, draft);
+    setSaving(false);
+    if (ok) setEditing(false);
+  }
   return (
-    <div style={{ ...styles.rankRow, alignItems: "flex-start" }}>
+    <div style={{ ...styles.rankRow, display: "block" }}>
+    <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={styles.rankName}>{r.meal_name}</div>
         <div style={styles.rankMeta}>{canteenName(r.canteen_id)} · {formatDate(r.meal_date)}</div>
@@ -121,16 +132,39 @@ function RatingRow({ r, canteenName, onRemove }) {
           <StarLine value={r.stars} size={14} />
           <span style={{ fontSize: 13, fontWeight: 800, color: C.text }}>{formatStars(r.stars)}</span>
         </div>
-        {onRemove && (
-          <button
-            type="button" onClick={() => onRemove(r)}
-            style={{ ...styles.smallAction, color: C.muted, fontSize: 12 }}
-            aria-label={`Bewertung für ${r.meal_name} entfernen`}
-          >
-            Entfernen
-          </button>
-        )}
+        <div style={{ display: "flex", gap: 10 }}>
+          {onChangeStars && !editing && (
+            <button
+              type="button" onClick={() => { setDraft(r.stars); setEditing(true); }}
+              style={{ ...styles.smallAction, color: C.muted, fontSize: 12 }}
+              aria-label={`Sterne für ${r.meal_name} ändern`}
+            >
+              Ändern
+            </button>
+          )}
+          {onRemove && (
+            <button
+              type="button" onClick={() => onRemove(r)}
+              style={{ ...styles.smallAction, color: C.muted, fontSize: 12 }}
+              aria-label={`Bewertung für ${r.meal_name} entfernen`}
+            >
+              Entfernen
+            </button>
+          )}
+        </div>
       </div>
+    </div>
+    {/* Sterne nachträglich ändern (z.B. aus Versehen 5 Sterne gegeben) */}
+    {editing && (
+      <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px dashed ${C.line}`, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10 }}>
+        <Stars value={draft} onRate={setDraft} size={24} disabled={saving} />
+        <span style={{ fontSize: 14, fontWeight: 800, color: C.text }}>{formatStars(draft)}</span>
+        <div style={{ display: "flex", gap: 10, marginLeft: "auto" }}>
+          <button type="button" onClick={() => setEditing(false)} disabled={saving} style={{ ...styles.smallAction, color: C.muted }}>Abbrechen</button>
+          <button type="button" onClick={save} disabled={saving} style={{ ...styles.smallAction, fontWeight: 800 }}>{saving ? "Speichert…" : "Speichern"}</button>
+        </div>
+      </div>
+    )}
     </div>
   );
 }
@@ -144,7 +178,7 @@ const SORTS = [
   { id: "worst", label: "🙈 Schlechteste" },
 ];
 const byDate = (a, b) => (b.meal_date || "").localeCompare(a.meal_date || "") || (b.id || 0) - (a.id || 0);
-function MyRatingsSheet({ ratings, initial, canteenName, onRemove, onClose }) {
+function MyRatingsSheet({ ratings, initial, canteenName, onRemove, onChangeStars, onClose }) {
   const [filter, setFilter] = useState(initial);
   const [sort, setSort] = useState("date");
   const base = filter === "comments" ? ratings.filter((r) => r.comment) : ratings;
@@ -175,11 +209,11 @@ function MyRatingsSheet({ ratings, initial, canteenName, onRemove, onClose }) {
           {SORTS.map((o) => <Chip key={o.id} active={sort === o.id} onClick={() => setSort(o.id)}>{o.label}</Chip>)}
         </div>
         {/* Nach Sternen sortiert: eine durchgehende Liste ohne Monate */}
-        {sort !== "date" && <div style={{ marginTop: 12 }}>{list.map((r) => <RatingRow key={r.id} r={r} canteenName={canteenName} onRemove={onRemove} />)}</div>}
+        {sort !== "date" && <div style={{ marginTop: 12 }}>{list.map((r) => <RatingRow key={r.id} r={r} canteenName={canteenName} onRemove={onRemove} onChangeStars={onChangeStars} />)}</div>}
         {months.map((m) => (
           <div key={m.key}>
             <h3 style={{ ...styles.h3, fontSize: 15, margin: "16px 0 6px" }}>{label(m.key)} · {m.items.length}</h3>
-            {m.items.map((r) => <RatingRow key={r.id} r={r} canteenName={canteenName} onRemove={onRemove} />)}
+            {m.items.map((r) => <RatingRow key={r.id} r={r} canteenName={canteenName} onRemove={onRemove} onChangeStars={onChangeStars} />)}
           </div>
         ))}
         {list.length === 0 && <div style={{ ...styles.empty, padding: "12px 8px" }}>Noch nichts hier.</div>}
@@ -229,6 +263,14 @@ export default function ProfileTab({
   }, [active, userId]);
 
   const canteenName = (id) => canteens.find((c) => c.id === id)?.name || `Mensa ${id}`;
+
+  // Sterne einer eigenen Bewertung nachträglich ändern (auch ältere Tage)
+  async function changeStars(r, stars) {
+    const { error } = await supabase.rpc("change_my_stars", { p_id: r.id, p_stars: stars });
+    if (error) { window.alert(friendlyError(error)); return false; }
+    setRatings((list) => list.map((x) => (x.id === r.id ? { ...x, stars } : x)));
+    return true;
+  }
 
   async function removeRating(r) {
     const hint = r.comment ? " Dein Kommentar wird dabei auch gelöscht." : "";
@@ -362,7 +404,7 @@ export default function ProfileTab({
       {listOpen && (
         <MyRatingsSheet
           ratings={ratings || []} initial={listOpen} canteenName={canteenName}
-          onRemove={removeRating} onClose={() => setListOpen(null)}
+          onRemove={removeRating} onChangeStars={changeStars} onClose={() => setListOpen(null)}
         />
       )}
 

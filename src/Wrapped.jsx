@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { supabase } from "./supabase.js";
-import { formatAvg, formatDate, todayBerlin, isMeatless } from "./helpers.js";
+import { formatAvg, formatDate, todayBerlin, isMeatless, dishName } from "./helpers.js";
 import { FONT_HEAD, C } from "./ui.jsx";
 import { runConfetti } from "./Celebration.jsx";
 import { MONTHS, iso, berlinNow, currentMonthWrapped } from "../api/_wrapped.js";
@@ -150,6 +150,17 @@ function ConfettiLayer({ onDone }) {
   return <canvas ref={ref} aria-hidden="true" style={{ position: "fixed", inset: 0, width: "100vw", height: "100vh", pointerEvents: "none", zIndex: 60 }} />;
 }
 
+// Ein oder mehrere Gerichtsnamen groß (bei vielen etwas kleiner)
+function DishNames({ list, big }) {
+  const size = list.length <= 1 ? 30 : list.length <= 3 ? 24 : 19;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8, margin: "4px 0" }}>
+      {list.slice(0, 5).map((r) => <div key={r.id ?? r.meal_name} style={{ ...big, fontSize: size }}>„{r.meal_name}“</div>)}
+      {list.length > 5 && <div style={{ fontSize: 15, fontWeight: 700 }}>… und {list.length - 5} weitere</div>}
+    </div>
+  );
+}
+
 // Alles ausrechnen, was in den Rückblick kommt
 function computeWrapped(mine, all, userId, friends, canteenName) {
   const n = mine.length;
@@ -160,6 +171,14 @@ function computeWrapped(mine, all, userId, friends, canteenName) {
   const sorted = [...mine].sort((a, b) => b.stars - a.stars || (a.meal_date < b.meal_date ? 1 : -1));
   const best = sorted[0];
   const worst = [...mine].sort((a, b) => a.stars - b.stars || (a.meal_date < b.meal_date ? 1 : -1))[0];
+  // Alle Gerichte mit derselben Top- bzw. Flop-Bewertung (jedes Gericht nur einmal)
+  const tied = (stars) => {
+    const out = [];
+    for (const r of sorted) if (Number(r.stars) === Number(stars) && !out.some((o) => dishName(o.meal_name) === dishName(r.meal_name))) out.push(r);
+    return out;
+  };
+  const bestAll = best ? tied(best.stars) : [];
+  const worstAll = worst ? tied(worst.stars) : [];
   const avg = n ? mine.reduce((s, r) => s + Number(r.stars), 0) / n : 0;
   const comments = mine.filter((r) => r.comment).length;
   const meatless = n ? Math.round((mine.filter(isMeatless).length / n) * 100) : 0;
@@ -202,7 +221,7 @@ function computeWrapped(mine, all, userId, friends, canteenName) {
   for (const r of mine) { const k = Number(r.meal_date.slice(5, 7)) - 1; byMonth[k] = (byMonth[k] || 0) + 1; }
   const topMonth = Object.entries(byMonth).sort((a, b) => b[1] - a[1])[0];
 
-  return { n, days: days.size, canteens, topCanteen: topCanteen && Number(topCanteen), topCount, best, worst, avg, comments, meatless, favDay: favDay && DAYS[favDay[0]], stricter, buddy, type, top5, regular: regular && regular.count >= 2 ? { ...regular, avg: regular.sum / regular.count } : null, streak, canteenRank, topMonth: topMonth && { name: MONTHS[topMonth[0]], count: topMonth[1] } };
+  return { n, days: days.size, canteens, topCanteen: topCanteen && Number(topCanteen), topCount, best, worst, bestAll, worstAll, avg, comments, meatless, favDay: favDay && DAYS[favDay[0]], stricter, buddy, type, top5, regular: regular && regular.count >= 2 ? { ...regular, avg: regular.sum / regular.count } : null, streak, canteenRank, topMonth: topMonth && { name: MONTHS[topMonth[0]], count: topMonth[1] } };
 }
 
 // ---- Karte im Tab "Ich" ------------------------------------------------------
@@ -359,17 +378,17 @@ function WrappedStory({ period, ratings, userId, friends, canteenName, onClose }
     period.special && w.worst && w.best && w.worst.stars < w.best.stars && { bg: C.cobalt, fg: "#fff", body: <>
       <div style={{ fontSize: 17, opacity: 0.9 }}>Und das hier …</div>
       <div style={{ fontSize: 64 }}>🙈</div>
-      <div style={{ ...big, fontSize: 30 }}>„{w.worst.meal_name}“</div>
+      <DishNames list={w.worstAll} big={big} />
       <div style={{ fontSize: 17, opacity: 0.95 }}>★ {formatAvg(w.worst.stars)} · lieber nicht nochmal</div>
     </> },
     w.best && !(period.special && w.top5.length >= 3) && { bg: C.yellow, fg: "#1A1A1A", body: <>
-      <div style={{ fontSize: 17 }}>Dein Highlight</div>
-      <div style={{ ...big, fontSize: 30 }}>„{w.best.meal_name}“</div>
+      <div style={{ fontSize: 17 }}>{w.bestAll.length > 1 ? `Deine ${w.bestAll.length} Highlights` : "Dein Highlight"}</div>
+      <DishNames list={w.bestAll} big={big} />
       <div style={{ ...big, fontSize: 44 }}>★ {formatAvg(w.best.stars)}</div>
-      <div style={{ fontSize: 15 }}>{canteenName(w.best.canteen_id)} · {formatDate(w.best.meal_date)}</div>
+      {w.bestAll.length === 1 && <div style={{ fontSize: 15 }}>{canteenName(w.best.canteen_id)} · {formatDate(w.best.meal_date)}</div>}
       {w.worst && w.worst.stars < w.best.stars && (
         <div style={{ marginTop: 18, padding: "10px 14px", borderRadius: 14, background: "rgba(0,0,0,.08)", fontSize: 15 }}>
-          Lieber nicht nochmal: „{w.worst.meal_name}“ · ★ {formatAvg(w.worst.stars)}
+          Lieber nicht nochmal: {w.worstAll.slice(0, 3).map((r) => `„${r.meal_name}“`).join(", ")}{w.worstAll.length > 3 ? ` und ${w.worstAll.length - 3} weitere` : ""} · ★ {formatAvg(w.worst.stars)}
         </div>
       )}
     </> },
@@ -464,7 +483,7 @@ function SummaryCard({ w, when, canteenName }) {
             </div>
           ))}
         </div>
-        {w.best && <div style={{ marginTop: 10, fontSize: 14 }}>⭐ <strong>{w.best.meal_name}</strong></div>}
+        {w.best && <div style={{ marginTop: 10, fontSize: 14 }}>⭐ <strong>{w.bestAll.slice(0, 3).map((r) => r.meal_name).join(" · ")}{w.bestAll.length > 3 ? ` +${w.bestAll.length - 3}` : ""}</strong></div>}
         {w.topCanteen && <div style={{ fontSize: 14 }}>🏫 {canteenName(w.topCanteen)}</div>}
         {w.buddy && <div style={{ fontSize: 14 }}>🫶 mit {w.buddy.name}</div>}
       </div>
@@ -499,7 +518,7 @@ async function drawShareImage(w, when, canteenName) {
   });
   let y = 1380;
   const line = (t) => { fit(t, 52, 900, 700); g.fillText(t, 90, y); y += 90; };
-  if (w.best) line(`⭐ ${w.best.meal_name}`);
+  if (w.best) for (const r of w.bestAll.slice(0, 3)) line(`⭐ ${r.meal_name}`);
   if (w.topCanteen) line(`🏫 ${canteenName(w.topCanteen)}`);
   if (w.buddy) line(`🫶 mit ${w.buddy.name}`);
   g.font = font(48); g.fillText("schmausi 🍽️", 90, 1820);
